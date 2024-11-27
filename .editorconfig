@@ -1,0 +1,4 @@
+root = true
+
+[*.{html,svelte}]
+indent_size = 2

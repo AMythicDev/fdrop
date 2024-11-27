@@ -1,0 +1,19 @@
+[package]
+name = "fdrop-discovery"
+version = { workspace = true }
+edition = "2021"
+
+[dependencies]
+libp2p = { version = "0.54", features = [
+    "tokio",
+    "tcp",
+    "quic",
+    "mdns",
+    "ed25519",
+] }
+tauri.workspace = true
+fdrop-common.workspace = true
+fdrop-config.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+tokio = { version = "1.38.0", features = ["macros"] }
