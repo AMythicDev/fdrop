@@ -8,6 +8,7 @@ pub fn run() {
             fdrop_config::commands::get_details,
             fdrop_config::commands::check_first_launch,
             fdrop_config::commands::initial_setup,
+            fdrop_config::commands::generate_keys,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

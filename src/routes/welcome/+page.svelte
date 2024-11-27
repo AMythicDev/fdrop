@@ -7,12 +7,13 @@
     getPages,
     buttonClickCallback,
   } from "$lib/welcome";
-
   import { Heading, P } from "flowbite-svelte";
+
   import Stepper from "../../components/Stepper.svelte";
   import InitialSetup from "../../components/welcome/InitialSetup.svelte";
   import KeyGeneration from "../../components/welcome/KeyGeneration.svelte";
   import LinkDevice from "../../components/welcome/LinkDevice.svelte";
+  import Done from "../../components/welcome/Done.svelte";
 
   createActivePage();
 
@@ -61,4 +62,5 @@
   <InitialSetup pageIndex={0} {details} bind:ref={pages[0].elm} />
   <KeyGeneration pageIndex={1} bind:ref={pages[1].elm} />
   <LinkDevice pageIndex={2} bind:ref={pages[2].elm} />
+  <Done pageIndex={3} bind:ref={pages[3].elm} />
 </div>
