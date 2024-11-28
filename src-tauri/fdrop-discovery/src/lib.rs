@@ -3,6 +3,10 @@
 // use std::time::Duration;
 // use tauri::AppHandle;
 // use tokio::select;
+use mdns_sd::{ServiceDaemon, ServiceEvent, ServiceInfo};
+
+const MDNS_SERVICE_TYPE: &str = "_fdrop._udp.local.";
+const FDROP_PORT: u16 = 10116;
 
 // #[derive(thiserror::Error, Debug)]
 // pub enum DiscoveryError {
@@ -51,17 +55,63 @@
 //     }
 // }
 
-// pub mod commands {
-//     use fdrop_common::human_readable_error;
+pub fn create_publisher(instance_name: &str) {
+    // Create a daemon
+    let mdns = ServiceDaemon::new().expect("Failed to create daemon");
+    let hs = hostname::get().unwrap();
+    let local_hostname = format!("{}.local.", hs.to_str().unwrap());
 
-//     use super::*;
+    let service = ServiceInfo::new(
+        MDNS_SERVICE_TYPE,
+        instance_name,
+        &local_hostname,
+        "",
+        FDROP_PORT,
+        None,
+    )
+    .unwrap()
+    .enable_addr_auto();
+    let monitor = mdns.monitor().expect("Failed to monitor the daemon");
+    mdns.register(service).unwrap();
+    let receiver = mdns.browse(MDNS_SERVICE_TYPE).expect("Failed to browse");
 
-//     #[tauri::command]
-//     pub async fn create_peer(handle: AppHandle) -> Result<(), String> {
-//         let key = fdrop_config::read_keys(&handle)
-//             .map_err(|err| fdrop_common::human_readable_error(&err))?;
-//         peer_init_from_key(key)
-//             .await
-//             .map_err(|e| human_readable_error(&e))
-//     }
-// }
+    let t1 = std::thread::spawn(move || loop {
+        while let Ok(event) = receiver.recv() {
+            match event {
+                ServiceEvent::ServiceResolved(info) => {
+                    if info.get_hostname() == local_hostname {
+                        continue;
+                    }
+                    println!("Resolved a new service: {}", info.get_fullname());
+                }
+                other_event => {
+                    println!("Received other event: {:?}", &other_event);
+                }
+            }
+        }
+    });
+
+    let t2 = std::thread::spawn(move || {
+        while let Ok(ev) = monitor.recv() {
+            println!("Daemon event: {:?}", ev);
+        }
+    });
+
+    t1.join().unwrap();
+    t2.join().unwrap();
+}
+
+pub mod commands {
+    use fdrop_common::human_readable_error;
+
+    use super::*;
+
+    // #[tauri::command]
+    // pub async fn create_peer(handle: AppHandle) -> Result<(), String> {
+    //     let key = fdrop_config::read_keys(&handle)
+    //         .map_err(|err| fdrop_common::human_readable_error(&err))?;
+    //     peer_init_from_key(key)
+    //         .await
+    //         .map_err(|e| human_readable_error(&e))
+    // }
+}
