@@ -1144,6 +1144,7 @@ dependencies = [
  "tauri-plugin-dialog",
  "tauri-plugin-process",
  "tauri-plugin-shell",
+ "tracing",
  "tracing-subscriber",
 ]
 
@@ -4933,6 +4934,7 @@ dependencies = [
  "tauri-utils",
  "thiserror 2.0.3",
  "tokio",
+ "tracing",
  "tray-icon",
  "url",
  "urlpattern",
@@ -5130,6 +5132,7 @@ dependencies = [
  "tao",
  "tauri-runtime",
  "tauri-utils",
+ "tracing",
  "url",
  "webkit2gtk",
  "webview2-com",
@@ -6491,6 +6494,7 @@ dependencies = [
  "soup3",
  "tao-macros",
  "thiserror 1.0.69",
+ "tracing",
  "url",
  "webkit2gtk",
  "webkit2gtk-sys",

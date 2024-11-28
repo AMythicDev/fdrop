@@ -23,11 +23,12 @@ tauri-build = { version = "2", features = [] }
 
 [dependencies]
 tauri-plugin-shell = "2"
-serde.workspace = true
-serde_json.workspace = true
 tauri-plugin-process = "2.0.1"
 tauri-plugin-dialog = "2.0.3"
 tracing-subscriber = { version = "0.3" }
+tracing.workspace = true
+serde.workspace = true
+serde_json.workspace = true
 tauri.workspace = true
 fdrop-config.workspace = true
 fdrop-common.workspace = true
@@ -38,7 +39,7 @@ fdrop-common = { path = "fdrop-common" }
 fdrop-config = { path = "fdrop-config" }
 fdrop-discovery = { path = "fdrop-discovery" }
 serde = { version = "1", features = ["derive"] }
-tauri = { version = "2" }
+tauri = { version = "2", features = ["tracing"] }
 thiserror = "1.0.58"
 serde_json = "1"
-tracing = { version = "0.1.40", features = ["async-await"] }
+tracing = { version = "0.1", features = ["async-await", "attributes"] }
