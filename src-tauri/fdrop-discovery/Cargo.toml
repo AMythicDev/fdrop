@@ -18,4 +18,4 @@ thiserror.workspace = true
 tracing.workspace = true
 tokio = { version = "1.38.0", features = ["macros"] }
 mdns-sd = "0.12.0"
-hostname = "0.4.0"
+whoami.workspace = true

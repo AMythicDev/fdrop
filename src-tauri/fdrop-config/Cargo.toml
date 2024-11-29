@@ -4,11 +4,10 @@ version = { workspace = true }
 edition = "2021"
 
 [dependencies]
+libp2p-identity = { version = "0.2.10", features = ["ed25519", "rand"] }
 serde_json.workspace = true
-whoami = "1.5.1"
-local-ip-address = "0.6.1"
+whoami.workspace = true
 tauri = { workspace = true }
 thiserror = { workspace = true }
 serde = { workspace = true }
 fdrop-common = { workspace = true }
-libp2p-identity = { version = "0.2.10", features = ["ed25519", "rand"] }

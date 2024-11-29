@@ -43,3 +43,4 @@ tauri = { version = "2", features = ["tracing"] }
 thiserror = "1.0.58"
 serde_json = "1"
 tracing = { version = "0.1", features = ["async-await", "attributes"] }
+whoami = "1.5.2"
