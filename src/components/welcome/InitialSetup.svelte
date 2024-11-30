@@ -48,7 +48,7 @@
       <Input
         class="outline-none border-2 border-gray-400 focus:border-blue-800 !bg-transparent"
         onclick={(ev) => ev.target.select()}
-        bind:value={details.hostname}
+        bind:value={details.instance_name}
       />
     </Label>
     <P class="text-xl md:w-10/12 lg:w-1/2">

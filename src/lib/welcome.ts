@@ -3,7 +3,7 @@ import { type Writable, writable } from "svelte/store";
 
 export type UserConfig = {
   user: string;
-  hostname: string;
+  instance_name: string;
   fdrop_dir: string;
 };
 

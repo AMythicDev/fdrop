@@ -29,15 +29,17 @@ pub enum ConfigError {
     Io(#[from] std::io::Error),
     #[error("Failed to resolve the local application data folder")]
     DataDirUnresolved,
+    #[error("invalid json config")]
+    InvalidConfig,
 }
 
 const CONFIGFILE: &'static str = "config.json";
 
 #[derive(Serialize, Deserialize)]
 pub struct UserConfig {
-    user: String,
-    hostname: String,
-    fdrop_dir: PathBuf,
+    pub user: String,
+    pub instance_name: String,
+    pub fdrop_dir: PathBuf,
 }
 
 pub fn data_dir(handle: &AppHandle) -> tauri::Result<PathBuf> {
@@ -98,7 +100,7 @@ pub mod commands {
     }
 
     #[tauri::command]
-    pub fn get_details(handle: AppHandle) -> UserConfig {
+    pub fn get_device_details(handle: AppHandle) -> UserConfig {
         let hostname = whoami::fallible::hostname().unwrap_or(String::new());
         let fdrop_dir = handle
             .path()
@@ -110,7 +112,7 @@ pub mod commands {
             .unwrap_or(PathBuf::from(""));
 
         UserConfig {
-            hostname,
+            instance_name: hostname,
             user: whoami::realname(),
             fdrop_dir,
         }

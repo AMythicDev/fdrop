@@ -28,17 +28,17 @@
 
   let details: UserConfig = $state({
     user: "",
-    hostname: "",
+    instance_name: "",
     fdrop_dir: "",
   });
 
-  function get_details() {
-    invoke("get_details", {}).then((d: any) => {
+  function get_device_details() {
+    invoke("get_device_details", {}).then((d: any) => {
       details = d;
     });
   }
 
-  get_details();
+  get_device_details();
 </script>
 
 <div class="min-h-screen p-16">
