@@ -1,4 +1,6 @@
 use std::{
+    collections::HashSet,
+    hash::Hash,
     net::IpAddr,
     sync::{Arc, Mutex},
 };
@@ -17,9 +19,24 @@ pub enum DiscoveryError {
     HostnameError(std::io::Error),
 }
 
+#[derive(Debug, Eq)]
 pub struct Connection {
     name: String,
     addresses: Vec<IpAddr>,
+}
+
+impl PartialEq for Connection {
+    fn eq(&self, other: &Self) -> bool {
+        self.name == other.name
+    }
+}
+
+impl Hash for Connection {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        // HACK: Hash strings until Rust feature `hasher_prefixfree_extras` isn't implemented
+        state.write(self.name.as_bytes());
+        state.write_u8(0xff);
+    }
 }
 
 impl From<&ServiceInfo> for Connection {
@@ -34,7 +51,7 @@ impl From<&ServiceInfo> for Connection {
 
 pub struct ConnectionManager {
     mdns_daemon: ServiceDaemon,
-    available_connections: Vec<Connection>,
+    available_connections: HashSet<Connection>,
 }
 
 impl ConnectionManager {
@@ -42,7 +59,7 @@ impl ConnectionManager {
         let mdns = ServiceDaemon::new()?;
         Ok(Mutex::new(Self {
             mdns_daemon: mdns,
-            available_connections: Vec::new(),
+            available_connections: HashSet::new(),
         }))
     }
 
@@ -81,14 +98,18 @@ impl ConnectionManager {
                         let mut connection_manager = cm_lock2.lock().unwrap();
                         connection_manager
                             .available_connections
-                            .push(Connection::from(&info));
+                            .replace(Connection::from(&info));
                         info!("found device with name: {}", info.get_fullname());
+                        info!(
+                            "Currnet devices: {:?}",
+                            connection_manager.available_connections
+                        );
                     }
                     ServiceEvent::SearchStopped(ss) if ss == MDNS_SERVICE_TYPE => {
                         break;
                     }
                     other_event => {
-                        println!("Received other event: {:?}", &other_event);
+                        info!("Received other event: {:?}", &other_event);
                     }
                 }
             }
