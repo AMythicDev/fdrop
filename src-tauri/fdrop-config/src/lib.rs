@@ -119,6 +119,32 @@ pub mod commands {
     }
 
     #[tauri::command]
+    pub fn get_details_from_config(handle: AppHandle) -> Result<UserConfig, String> {
+        let configfile = data_dir(&handle)
+            .and_then(|mut d| {
+                d.push(CONFIGFILE);
+                Ok(d)
+            })
+            .map_err(|_| ConfigError::DataDirUnresolved.to_string())?;
+
+        let mut file = File::open(configfile).map_err(|e| {
+            let start = ConfigError::from(e);
+            human_readable_error(&start)
+        })?;
+
+        let mut buf = String::with_capacity(256);
+        let _ = file.read_to_string(&mut buf).map_err(|e| {
+            let start = ConfigError::from(e);
+            human_readable_error(&start)
+        });
+
+        let user_config: UserConfig =
+            serde_json::from_str(&buf).map_err(|_| ConfigError::InvalidConfig.to_string())?;
+
+        Ok(user_config)
+    }
+
+    #[tauri::command]
     pub fn generate_keys(handle: AppHandle) -> Result<(), String> {
         let keypair = libp2p_identity::ed25519::Keypair::generate();
         let data_dir = data_dir(&handle).map_err(|_| ConfigError::DataDirUnresolved.to_string())?;

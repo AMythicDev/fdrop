@@ -63,21 +63,31 @@ impl ConnectionManager {
         }))
     }
 
-    pub fn launch(
-        cm_lock: Arc<Mutex<ConnectionManager>>,
-        instance_name: &str,
-    ) -> Result<(), DiscoveryError> {
+    pub fn shutdown(&self) -> Result<(), DiscoveryError> {
+        self.mdns_daemon.stop_browse(MDNS_SERVICE_TYPE)?;
+        self.mdns_daemon.shutdown()?;
+        info!("closed mdns service daemon");
+        Ok(())
+    }
+}
+
+pub mod commands {
+    use tauri::{AppHandle, Manager};
+
+    use super::*;
+    #[tauri::command]
+    pub fn launch_discovery_service(handle: AppHandle) -> Result<(), DiscoveryError> {
         let hs = whoami::fallible::hostname().map_err(|e| DiscoveryError::HostnameError(e))?;
         let local_hostname = format!("{}.local.", hs);
 
-        let cm_lock2 = cm_lock.clone();
+        let user_details = fdrop_config::commands::get_details_from_config(handle)?;
 
         // TODO: look into error checking here
-        let connection_manager = cm_lock.lock().unwrap();
+        let connection_manager = handle.state::<Mutex<ConnectionManager>>().lock().unwrap();
 
         let service = ServiceInfo::new(
             MDNS_SERVICE_TYPE,
-            instance_name,
+            &user_details.instance_name,
             &local_hostname,
             "",
             FDROP_PORT,
@@ -95,7 +105,9 @@ impl ConnectionManager {
                         if info.get_hostname() == local_hostname {
                             continue;
                         }
-                        let mut connection_manager = cm_lock2.lock().unwrap();
+                        // TODO: look into error checking here
+                        let mut connection_manager =
+                            handle.state::<Mutex<ConnectionManager>>().lock().unwrap();
                         connection_manager
                             .available_connections
                             .replace(Connection::from(&info));
@@ -116,26 +128,4 @@ impl ConnectionManager {
         });
         Ok(())
     }
-
-    pub fn shutdown(&self) -> Result<(), DiscoveryError> {
-        self.mdns_daemon.stop_browse(MDNS_SERVICE_TYPE)?;
-        self.mdns_daemon.shutdown()?;
-        info!("closed mdns service daemon");
-        Ok(())
-    }
-}
-
-pub mod commands {
-    use fdrop_common::human_readable_error;
-
-    use super::*;
-
-    // #[tauri::command]
-    // pub async fn create_peer(handle: AppHandle) -> Result<(), String> {
-    //     let key = fdrop_config::read_keys(&handle)
-    //         .map_err(|err| fdrop_common::human_readable_error(&err))?;
-    //     peer_init_from_key(key)
-    //         .await
-    //         .map_err(|e| human_readable_error(&e))
-    // }
 }
