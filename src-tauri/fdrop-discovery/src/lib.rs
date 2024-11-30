@@ -1,11 +1,6 @@
-use std::{
-    collections::HashSet,
-    hash::Hash,
-    net::IpAddr,
-    sync::{Arc, Mutex},
-};
-
+use fdrop_common::human_readable_error;
 use mdns_sd::{ServiceDaemon, ServiceEvent, ServiceInfo};
+use std::{collections::HashSet, hash::Hash, net::IpAddr, sync::Mutex};
 use tracing::info;
 
 const MDNS_SERVICE_TYPE: &str = "_fdrop._udp.local.";
@@ -13,10 +8,24 @@ const FDROP_PORT: u16 = 10116;
 
 #[derive(thiserror::Error, Debug)]
 pub enum DiscoveryError {
+    #[error("service error")]
+    ServiceError(mdns_sd::Error),
     #[error("failed to create mDNS service daemon")]
-    ServiceDomainError(#[from] mdns_sd::Error),
+    ServiceDaemonError(mdns_sd::Error),
+    #[error("failed to register service with mDNS service daemon")]
+    ServiceRegisterError(mdns_sd::Error),
+    #[error("failed to browse service with mDNS service daemon")]
+    BrowseError(mdns_sd::Error),
     #[error("cannot determine system hostname")]
     HostnameError(std::io::Error),
+    #[error("mDNS shutdown error")]
+    ShutdownError(mdns_sd::Error),
+}
+
+impl From<DiscoveryError> for String {
+    fn from(value: DiscoveryError) -> Self {
+        human_readable_error(&value)
+    }
 }
 
 #[derive(Debug, Eq)]
@@ -56,7 +65,7 @@ pub struct ConnectionManager {
 
 impl ConnectionManager {
     pub fn new() -> Result<Mutex<Self>, DiscoveryError> {
-        let mdns = ServiceDaemon::new()?;
+        let mdns = ServiceDaemon::new().map_err(|e| DiscoveryError::ServiceDaemonError(e))?;
         Ok(Mutex::new(Self {
             mdns_daemon: mdns,
             available_connections: HashSet::new(),
@@ -64,26 +73,31 @@ impl ConnectionManager {
     }
 
     pub fn shutdown(&self) -> Result<(), DiscoveryError> {
-        self.mdns_daemon.stop_browse(MDNS_SERVICE_TYPE)?;
-        self.mdns_daemon.shutdown()?;
+        self.mdns_daemon
+            .stop_browse(MDNS_SERVICE_TYPE)
+            .map_err(|e| DiscoveryError::ShutdownError(e))?;
+        // TODO: De-register our local service
+        self.mdns_daemon
+            .shutdown()
+            .map_err(|e| DiscoveryError::ShutdownError(e))?;
         info!("closed mdns service daemon");
         Ok(())
     }
 }
 
 pub mod commands {
-    use tauri::{AppHandle, Manager};
-
     use super::*;
+    use tauri::{AppHandle, Manager};
     #[tauri::command]
-    pub fn launch_discovery_service(handle: AppHandle) -> Result<(), DiscoveryError> {
+    pub fn launch_discovery_service(handle: AppHandle) -> Result<(), String> {
         let hs = whoami::fallible::hostname().map_err(|e| DiscoveryError::HostnameError(e))?;
         let local_hostname = format!("{}.local.", hs);
 
-        let user_details = fdrop_config::commands::get_details_from_config(handle)?;
+        let user_details = fdrop_config::commands::get_details_from_config(&handle)?;
 
         // TODO: look into error checking here
-        let connection_manager = handle.state::<Mutex<ConnectionManager>>().lock().unwrap();
+        let cm_lock = handle.state::<Mutex<ConnectionManager>>();
+        let connection_manager = cm_lock.lock().unwrap();
 
         let service = ServiceInfo::new(
             MDNS_SERVICE_TYPE,
@@ -92,11 +106,19 @@ pub mod commands {
             "",
             FDROP_PORT,
             None,
-        )?
+        )
+        .map_err(|e| DiscoveryError::ServiceError(e))?
         .enable_addr_auto();
-        connection_manager.mdns_daemon.register(service)?;
-        let receiver = connection_manager.mdns_daemon.browse(MDNS_SERVICE_TYPE)?;
+        connection_manager
+            .mdns_daemon
+            .register(service)
+            .map_err(|e| DiscoveryError::ServiceDaemonError(e))?;
+        let receiver = connection_manager
+            .mdns_daemon
+            .browse(MDNS_SERVICE_TYPE)
+            .map_err(|e| DiscoveryError::BrowseError(e))?;
         info!("successfully created mdns service daemon");
+        drop(connection_manager);
 
         std::thread::spawn(move || {
             while let Ok(event) = receiver.recv() {
@@ -106,8 +128,8 @@ pub mod commands {
                             continue;
                         }
                         // TODO: look into error checking here
-                        let mut connection_manager =
-                            handle.state::<Mutex<ConnectionManager>>().lock().unwrap();
+                        let cm_lock = handle.state::<Mutex<ConnectionManager>>();
+                        let mut connection_manager = cm_lock.lock().unwrap();
                         connection_manager
                             .available_connections
                             .replace(Connection::from(&info));

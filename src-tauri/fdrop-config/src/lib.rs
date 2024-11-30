@@ -119,7 +119,7 @@ pub mod commands {
     }
 
     #[tauri::command]
-    pub fn get_details_from_config(handle: AppHandle) -> Result<UserConfig, String> {
+    pub fn get_details_from_config(handle: &AppHandle) -> Result<UserConfig, String> {
         let configfile = data_dir(&handle)
             .and_then(|mut d| {
                 d.push(CONFIGFILE);
