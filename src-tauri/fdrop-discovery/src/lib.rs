@@ -1,3 +1,8 @@
+use std::{
+    net::IpAddr,
+    sync::{Arc, Mutex},
+};
+
 use mdns_sd::{ServiceDaemon, ServiceEvent, ServiceInfo};
 use tracing::info;
 
@@ -12,15 +17,46 @@ pub enum DiscoveryError {
     HostnameError(std::io::Error),
 }
 
+pub struct Connection {
+    name: String,
+    addresses: Vec<IpAddr>,
+}
+
+impl From<&ServiceInfo> for Connection {
+    fn from(value: &ServiceInfo) -> Self {
+        Connection {
+            // TODO: Get proper name
+            name: value.get_fullname().to_string(),
+            addresses: value.get_addresses().iter().map(|i| *i).collect(),
+        }
+    }
+}
+
 pub struct ConnectionManager {
     mdns_daemon: ServiceDaemon,
+    available_connections: Vec<Connection>,
 }
 
 impl ConnectionManager {
-    pub fn new(instance_name: &str) -> Result<Self, DiscoveryError> {
+    pub fn new() -> Result<Mutex<Self>, DiscoveryError> {
         let mdns = ServiceDaemon::new()?;
+        Ok(Mutex::new(Self {
+            mdns_daemon: mdns,
+            available_connections: Vec::new(),
+        }))
+    }
+
+    pub fn launch(
+        cm_lock: Arc<Mutex<ConnectionManager>>,
+        instance_name: &str,
+    ) -> Result<(), DiscoveryError> {
         let hs = whoami::fallible::hostname().map_err(|e| DiscoveryError::HostnameError(e))?;
         let local_hostname = format!("{}.local.", hs);
+
+        let cm_lock2 = cm_lock.clone();
+
+        // TODO: look into error checking here
+        let connection_manager = cm_lock.lock().unwrap();
 
         let service = ServiceInfo::new(
             MDNS_SERVICE_TYPE,
@@ -31,9 +67,8 @@ impl ConnectionManager {
             None,
         )?
         .enable_addr_auto();
-        let monitor = mdns.monitor()?;
-        mdns.register(service)?;
-        let receiver = mdns.browse(MDNS_SERVICE_TYPE)?;
+        connection_manager.mdns_daemon.register(service)?;
+        let receiver = connection_manager.mdns_daemon.browse(MDNS_SERVICE_TYPE)?;
         info!("successfully created mdns service daemon");
 
         std::thread::spawn(move || {
@@ -43,7 +78,11 @@ impl ConnectionManager {
                         if info.get_hostname() == local_hostname {
                             continue;
                         }
-                        println!("Resolved a new service: {}", info.get_fullname());
+                        let mut connection_manager = cm_lock2.lock().unwrap();
+                        connection_manager
+                            .available_connections
+                            .push(Connection::from(&info));
+                        info!("found device with name: {}", info.get_fullname());
                     }
                     ServiceEvent::SearchStopped(ss) if ss == MDNS_SERVICE_TYPE => {
                         break;
@@ -54,14 +93,7 @@ impl ConnectionManager {
                 }
             }
         });
-
-        std::thread::spawn(move || {
-            while let Ok(ev) = monitor.recv() {
-                println!("Daemon event: {:?}", ev);
-            }
-        });
-
-        Ok(Self { mdns_daemon: mdns })
+        Ok(())
     }
 
     pub fn shutdown(&self) -> Result<(), DiscoveryError> {
