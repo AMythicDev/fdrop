@@ -64,11 +64,11 @@
         bind:value={details.fdrop_dir}
       >
         <button
-          class="bg-blue-700 px-4 h-full rounded-r-lg translate-x-2.5"
+          class="bg-green-400 px-4 h-full rounded-r-lg translate-x-2.5"
           slot="right"
           onclick={openFolderSelector}
         >
-          <FolderOpenOutline />
+          <FolderOpenOutline color="white" />
         </button>
       </Input>
     </Label>

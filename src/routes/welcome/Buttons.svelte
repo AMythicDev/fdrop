@@ -29,17 +29,19 @@
   }
 </script>
 
-<ButtonGroup class="flex justify-between w-96">
+<ButtonGroup class="flex justify-between w-96 shadow-none">
   {#if exitButton}
     <Button class="!bg-red-400 px-6 py-2.5" onclick={() => exit(0)}>
-      <CloseOutline /><span class="ml-2 text-white">Close</span></Button
+      <CloseOutline color="white" /><span class="ml-2 text-white">Close</span
+      ></Button
     >
   {:else}
     <Button
       class="!bg-gray-400 px-6 py-2.5"
       onclick={() => activePageStore.set(activePage - 1)}
     >
-      <ArrowLeftOutline /><span class="ml-2 text-white">Back</span></Button
+      <ArrowLeftOutline color="white" /><span class="ml-2 text-white">Back</span
+      ></Button
     >
   {/if}
   <Button
@@ -47,6 +49,6 @@
     disabled={continueDisabled}
     onclick={continueCallback}
     ><span class="mr-2 text-white">{continueButtonText}</span>
-    <ArrowRightOutline />
+    <ArrowRightOutline color="white" />
   </Button>
 </ButtonGroup>
