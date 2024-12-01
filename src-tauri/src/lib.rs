@@ -1,3 +1,4 @@
+use tauri::Manager;
 use tracing::info;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -16,6 +17,11 @@ pub fn run() {
             fdrop_config::commands::generate_keys,
             fdrop_discovery::commands::launch_discovery_service,
         ])
+        .setup(|app| {
+            let connection_manager = fdrop_discovery::ConnectionManager::new()?;
+            app.manage(connection_manager);
+            Ok(())
+        })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

@@ -83,6 +83,10 @@ impl ConnectionManager {
         info!("closed mdns service daemon");
         Ok(())
     }
+
+    pub fn get_availble_connections(&self) -> &HashSet<Connection> {
+        &self.available_connections
+    }
 }
 
 pub mod commands {
@@ -93,7 +97,7 @@ pub mod commands {
         let hs = whoami::fallible::hostname().map_err(|e| DiscoveryError::HostnameError(e))?;
         let local_hostname = format!("{}.local.", hs);
 
-        let user_details = fdrop_config::commands::get_details_from_config(&handle)?;
+        let user_details = fdrop_config::get_details_from_config(&handle)?;
 
         // TODO: look into error checking here
         let cm_lock = handle.state::<Mutex<ConnectionManager>>();

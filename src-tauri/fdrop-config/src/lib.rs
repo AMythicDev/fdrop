@@ -1,10 +1,6 @@
 use fdrop_common::human_readable_error;
 use serde::{Deserialize, Serialize};
-use std::{
-    fs::File,
-    io::{Read, Write},
-    path::PathBuf,
-};
+use std::{fs::File, io::Read, path::PathBuf};
 use tauri::{AppHandle, Manager};
 
 #[derive(thiserror::Error, Debug)]
@@ -61,17 +57,49 @@ pub fn read_keys(handle: &AppHandle) -> Result<libp2p_identity::ed25519::Keypair
         })
 }
 
+pub fn get_details_from_config(handle: &AppHandle) -> Result<UserConfig, String> {
+    let configfile = data_dir(&handle)
+        .and_then(|mut d| {
+            d.push(CONFIGFILE);
+            Ok(d)
+        })
+        .map_err(|_| ConfigError::DataDirUnresolved.to_string())?;
+
+    let mut file = File::open(configfile).map_err(|e| {
+        let start = ConfigError::from(e);
+        human_readable_error(&start)
+    })?;
+
+    let mut buf = String::with_capacity(256);
+    let _ = file.read_to_string(&mut buf).map_err(|e| {
+        let start = ConfigError::from(e);
+        human_readable_error(&start)
+    });
+
+    let user_config: UserConfig =
+        serde_json::from_str(&buf).map_err(|_| ConfigError::InvalidConfig.to_string())?;
+
+    Ok(user_config)
+}
+
+pub async fn check_first_launch(handle: &AppHandle) -> bool {
+    let configfile = handle.path().app_local_data_dir().and_then(|mut d| {
+        d.push(CONFIGFILE);
+        Ok(d)
+    });
+
+    configfile.is_ok() && configfile.unwrap().exists()
+}
+
 pub mod commands {
-    use super::*;
+    use super::{data_dir, ConfigError, UserConfig, CONFIGFILE};
+    use fdrop_common::human_readable_error;
+    use std::{fs::File, io::Write, path::PathBuf};
+    use tauri::{AppHandle, Manager};
 
     #[tauri::command]
     pub async fn check_first_launch(handle: AppHandle) -> bool {
-        let configfile = handle.path().app_local_data_dir().and_then(|mut d| {
-            d.push(CONFIGFILE);
-            Ok(d)
-        });
-
-        configfile.is_ok() && configfile.unwrap().exists()
+        super::check_first_launch(&handle).await
     }
 
     #[tauri::command]
@@ -119,29 +147,8 @@ pub mod commands {
     }
 
     #[tauri::command]
-    pub fn get_details_from_config(handle: &AppHandle) -> Result<UserConfig, String> {
-        let configfile = data_dir(&handle)
-            .and_then(|mut d| {
-                d.push(CONFIGFILE);
-                Ok(d)
-            })
-            .map_err(|_| ConfigError::DataDirUnresolved.to_string())?;
-
-        let mut file = File::open(configfile).map_err(|e| {
-            let start = ConfigError::from(e);
-            human_readable_error(&start)
-        })?;
-
-        let mut buf = String::with_capacity(256);
-        let _ = file.read_to_string(&mut buf).map_err(|e| {
-            let start = ConfigError::from(e);
-            human_readable_error(&start)
-        });
-
-        let user_config: UserConfig =
-            serde_json::from_str(&buf).map_err(|_| ConfigError::InvalidConfig.to_string())?;
-
-        Ok(user_config)
+    pub fn get_details_from_config(handle: AppHandle) -> Result<UserConfig, String> {
+        super::get_details_from_config(&handle)
     }
 
     #[tauri::command]
