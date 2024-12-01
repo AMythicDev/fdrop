@@ -1,12 +1,9 @@
 <script lang="ts">
-  import { invoke } from "@tauri-apps/api/core";
   import { getActivePage } from "../../lib/welcome";
   import Buttons from "./Buttons.svelte";
 
   let { pageIndex, ref = $bindable() } = $props();
   let activePage = getActivePage();
-
-  invoke("launch_discovery_service");
 </script>
 
 <div

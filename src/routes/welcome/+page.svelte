@@ -5,7 +5,7 @@
     getActivePage,
     createActivePage,
     getPages,
-    buttonClickCallback,
+    transitionPage,
   } from "$lib/welcome";
   import { Heading, P } from "flowbite-svelte";
 
@@ -22,7 +22,10 @@
   let activePage: number = $state(0);
 
   getActivePage().subscribe((value: any) => {
-    buttonClickCallback(value, activePage!, pages);
+    transitionPage(value, activePage!, pages);
+    if (value == 2) {
+      invoke("launch_discovery_service");
+    }
     activePage = value;
   });
 

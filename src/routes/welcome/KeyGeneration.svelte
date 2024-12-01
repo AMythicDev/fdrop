@@ -14,10 +14,6 @@
     invoke("generate_keys", {});
     key_generation_complete = true;
   }
-
-  function create_pper() {
-    invoke("create_peer", {});
-  }
 </script>
 
 <div
@@ -38,8 +34,5 @@
       >Generate Keys</Button
     >
   {/if}
-  <Buttons
-    extraContinueCallback={create_pper}
-    continueDisabled={!key_generation_complete}
-  />
+  <Buttons continueDisabled={!key_generation_complete} />
 </div>

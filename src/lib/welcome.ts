@@ -30,7 +30,7 @@ export function getActivePage(): Writable<number> {
   return getContext("activePage");
 }
 
-export function buttonClickCallback(
+export function transitionPage(
   newActivePage: number,
   oldActivePage: number,
   pages: Page[],
