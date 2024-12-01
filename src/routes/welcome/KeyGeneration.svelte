@@ -4,6 +4,7 @@
   import Buttons from "./Buttons.svelte";
   import { invoke } from "@tauri-apps/api/core";
   import { Button } from "flowbite-svelte";
+  import CheckOutline from "flowbite-svelte-icons/CheckOutline.svelte";
 
   let { pageIndex, ref = $bindable() } = $props();
 
@@ -28,7 +29,9 @@
     pair for this setup by click on button below.
   </P>
   {#if key_generation_complete}
-    <P><span class="text-green-500">✔ </span> Key generated successfully</P>
+    <P
+      ><CheckOutline class="inline text-green-400" /> Key generated successfully</P
+    >
   {:else}
     <Button class="!bg-green-400 w-48" on:click={generate_keys}
       >Generate Keys</Button
