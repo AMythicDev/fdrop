@@ -20,6 +20,8 @@ pub enum DiscoveryError {
     HostnameError(std::io::Error),
     #[error("mDNS shutdown error")]
     ShutdownError(mdns_sd::Error),
+    #[error(transparent)]
+    TauriError(#[from] tauri::Error),
 }
 
 impl From<DiscoveryError> for String {
@@ -91,7 +93,7 @@ impl ConnectionManager {
 
 pub mod commands {
     use super::*;
-    use tauri::{AppHandle, Manager};
+    use tauri::{AppHandle, Emitter, Manager};
     #[tauri::command]
     pub fn launch_discovery_service(handle: AppHandle) -> Result<(), String> {
         let hs = whoami::fallible::hostname().map_err(|e| DiscoveryError::HostnameError(e))?;
@@ -124,7 +126,7 @@ pub mod commands {
         info!("successfully created mdns service daemon");
         drop(connection_manager);
 
-        std::thread::spawn(move || {
+        std::thread::spawn(move || -> Result<(), DiscoveryError> {
             while let Ok(event) = receiver.recv() {
                 match event {
                     ServiceEvent::ServiceResolved(info) => {
@@ -134,14 +136,10 @@ pub mod commands {
                         // TODO: look into error checking here
                         let cm_lock = handle.state::<Mutex<ConnectionManager>>();
                         let mut connection_manager = cm_lock.lock().unwrap();
-                        connection_manager
-                            .available_connections
-                            .replace(Connection::from(&info));
+                        let con = Connection::from(&info);
+                        handle.emit("device-discovered", &con.name)?;
+                        connection_manager.available_connections.replace(con);
                         info!("found device with name: {}", info.get_fullname());
-                        info!(
-                            "Currnet devices: {:?}",
-                            connection_manager.available_connections
-                        );
                     }
                     ServiceEvent::SearchStopped(ss) if ss == MDNS_SERVICE_TYPE => {
                         break;
@@ -151,6 +149,7 @@ pub mod commands {
                     }
                 }
             }
+            Ok(())
         });
         Ok(())
     }
