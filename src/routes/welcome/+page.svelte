@@ -10,10 +10,10 @@
   import { Heading, P } from "flowbite-svelte";
 
   import Stepper from "../../components/Stepper.svelte";
-  import InitialSetup from "../../components/welcome/InitialSetup.svelte";
-  import KeyGeneration from "../../components/welcome/KeyGeneration.svelte";
-  import LinkDevice from "../../components/welcome/LinkDevice.svelte";
-  import Done from "../../components/welcome/Done.svelte";
+  import InitialSetup from "./InitialSetup.svelte";
+  import KeyGeneration from "./KeyGeneration.svelte";
+  import LinkDevice from "./LinkDevice.svelte";
+  import Done from "./Done.svelte";
 
   createActivePage();
 
