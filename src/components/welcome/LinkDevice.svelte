@@ -5,6 +5,8 @@
 
   let { pageIndex, ref = $bindable() } = $props();
   let activePage = getActivePage();
+
+  invoke("launch_discovery_service");
 </script>
 
 <div
