@@ -6,10 +6,10 @@
   let { pageIndex, ref = $bindable() } = $props();
   let activePage = getActivePage();
 
-  let devices: string[] = $state([]);
+  let devices = $state(new Set<string>());
 
   listen<string>("device-discovered", (event) => {
-    devices.push(event.payload);
+    devices.add(event.payload);
   });
 </script>
 
