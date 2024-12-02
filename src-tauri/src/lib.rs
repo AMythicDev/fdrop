@@ -1,3 +1,4 @@
+use std::sync::Mutex;
 use tauri::Manager;
 use tracing::info;
 
@@ -20,6 +21,12 @@ pub fn run() {
         .setup(|app| {
             let connection_manager = fdrop_discovery::ConnectionManager::new()?;
             app.manage(connection_manager);
+
+            if !tauri::async_runtime::block_on(fdrop_config::check_first_launch(&app.handle())) {
+                let user_config = Mutex::new(fdrop_config::get_details_from_config(&app.handle())?);
+                app.manage(user_config);
+            }
+
             Ok(())
         })
         .run(tauri::generate_context!())

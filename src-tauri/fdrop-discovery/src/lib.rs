@@ -93,15 +93,17 @@ impl ConnectionManager {
 
 pub mod commands {
     use super::*;
+    use fdrop_config::UserConfig;
     use tauri::{AppHandle, Emitter, Manager};
+
     #[tauri::command]
     pub fn launch_discovery_service(handle: AppHandle) -> Result<(), String> {
         let hs = whoami::fallible::hostname().map_err(|e| DiscoveryError::HostnameError(e))?;
         let local_hostname = format!("{}.local.", hs);
 
-        let user_details = fdrop_config::get_details_from_config(&handle)?;
-
         // TODO: look into error checking here
+        let user_details_lock = handle.state::<Mutex<UserConfig>>();
+        let user_details = user_details_lock.lock().unwrap();
         let cm_lock = handle.state::<Mutex<ConnectionManager>>();
         let connection_manager = cm_lock.lock().unwrap();
 
@@ -125,6 +127,7 @@ pub mod commands {
             .map_err(|e| DiscoveryError::BrowseError(e))?;
         info!("successfully created mdns service daemon");
         drop(connection_manager);
+        drop(user_details);
 
         std::thread::spawn(move || -> Result<(), DiscoveryError> {
             while let Ok(event) = receiver.recv() {

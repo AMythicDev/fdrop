@@ -31,7 +31,7 @@ pub enum ConfigError {
 
 const CONFIGFILE: &'static str = "config.json";
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct UserConfig {
     pub user: String,
     pub instance_name: String,
@@ -94,7 +94,7 @@ pub async fn check_first_launch(handle: &AppHandle) -> bool {
 pub mod commands {
     use super::{data_dir, ConfigError, UserConfig, CONFIGFILE};
     use fdrop_common::human_readable_error;
-    use std::{fs::File, io::Write, path::PathBuf};
+    use std::{fs::File, io::Write, path::PathBuf, sync::Mutex};
     use tauri::{AppHandle, Manager};
 
     #[tauri::command]
@@ -110,6 +110,7 @@ pub mod commands {
                 Ok(d)
             })
             .map_err(|_| ConfigError::DataDirUnresolved.to_string())?;
+        handle.manage(Mutex::new(config.clone()));
         let json_config = serde_json::to_string(&config).unwrap();
         let mut file = File::create(configfile).map_err(|e| human_readable_error(&e))?;
 
