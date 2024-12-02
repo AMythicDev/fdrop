@@ -1,5 +1,4 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { PageData } from "./$types";
 
 export function load(params: any) {
   invoke("check_first_launch", {}).then((res) => {
