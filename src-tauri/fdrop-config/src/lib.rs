@@ -88,7 +88,7 @@ pub async fn check_first_launch(handle: &AppHandle) -> bool {
         Ok(d)
     });
 
-    configfile.is_ok() && configfile.unwrap().exists()
+    !(configfile.is_ok() && configfile.unwrap().exists())
 }
 
 pub mod commands {
