@@ -1,5 +1,5 @@
 [package]
-name = "fdrop-discovery"
+name = "fdrop-net"
 version = { workspace = true }
 edition = "2021"
 

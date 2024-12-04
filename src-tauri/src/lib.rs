@@ -1,4 +1,4 @@
-use fdrop_discovery::ConnectionManager;
+use fdrop_net::ConnectionManager;
 use std::sync::Mutex;
 use tauri::{Manager, WindowEvent};
 use tracing::info;
@@ -17,10 +17,10 @@ pub fn run() {
             fdrop_config::commands::check_first_launch,
             fdrop_config::commands::initial_setup,
             fdrop_config::commands::generate_keys,
-            fdrop_discovery::commands::launch_discovery_service,
+            fdrop_net::commands::launch_discovery_service,
         ])
         .setup(|app| {
-            let connection_manager = fdrop_discovery::ConnectionManager::new()?;
+            let connection_manager = fdrop_net::ConnectionManager::new()?;
             app.manage(connection_manager);
 
             if !tauri::async_runtime::block_on(fdrop_config::check_first_launch(&app.handle())) {
@@ -35,7 +35,6 @@ pub fn run() {
                     let connection_manager = cm_lock.lock().unwrap();
                     connection_manager.shutdown().unwrap();
                     info!("shutdown mdns daemon");
-                    main_window2.unmanage::<Mutex<ConnectionManager>>();
                 }
             });
             Ok(())

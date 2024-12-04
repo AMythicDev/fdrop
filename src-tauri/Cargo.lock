@@ -1136,7 +1136,7 @@ version = "0.1.0"
 dependencies = [
  "fdrop-common",
  "fdrop-config",
- "fdrop-discovery",
+ "fdrop-net",
  "serde",
  "serde_json",
  "tauri",
@@ -1169,7 +1169,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "fdrop-discovery"
+name = "fdrop-net"
 version = "0.1.0"
 dependencies = [
  "fdrop-common",

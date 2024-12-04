@@ -1,5 +1,5 @@
 [workspace]
-members = ["fdrop-common", "fdrop-config", "fdrop-discovery"]
+members = ["fdrop-common", "fdrop-config", "fdrop-net"]
 
 [workspace.package]
 version = "0.1.0"
@@ -32,12 +32,12 @@ serde_json.workspace = true
 tauri.workspace = true
 fdrop-config.workspace = true
 fdrop-common.workspace = true
-fdrop-discovery.workspace = true
+fdrop-net.workspace = true
 
 [workspace.dependencies]
 fdrop-common = { path = "fdrop-common" }
 fdrop-config = { path = "fdrop-config" }
-fdrop-discovery = { path = "fdrop-discovery" }
+fdrop-net = { path = "fdrop-net" }
 serde = { version = "1", features = ["derive"] }
 tauri = { version = "2", features = ["tracing"] }
 thiserror = "1.0.58"
