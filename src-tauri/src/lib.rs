@@ -1,5 +1,6 @@
+use fdrop_discovery::ConnectionManager;
 use std::sync::Mutex;
-use tauri::Manager;
+use tauri::{Manager, WindowEvent};
 use tracing::info;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -26,7 +27,17 @@ pub fn run() {
                 let user_config = Mutex::new(fdrop_config::get_details_from_config(&app.handle())?);
                 app.manage(user_config);
             }
-
+            let main_window = app.get_webview_window("main").unwrap();
+            let main_window2 = main_window.clone();
+            main_window.on_window_event(move |event| {
+                if matches!(event, WindowEvent::CloseRequested { .. }) {
+                    let cm_lock = main_window2.state::<Mutex<ConnectionManager>>();
+                    let connection_manager = cm_lock.lock().unwrap();
+                    connection_manager.shutdown().unwrap();
+                    info!("shutdown mdns daemon");
+                    main_window2.unmanage::<Mutex<ConnectionManager>>();
+                }
+            });
             Ok(())
         })
         .run(tauri::generate_context!())

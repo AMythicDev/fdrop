@@ -63,6 +63,7 @@ impl From<&ServiceInfo> for Connection {
 pub struct ConnectionManager {
     mdns_daemon: ServiceDaemon,
     available_connections: HashSet<Connection>,
+    instance_name: Option<String>,
 }
 
 impl ConnectionManager {
@@ -71,6 +72,7 @@ impl ConnectionManager {
         Ok(Mutex::new(Self {
             mdns_daemon: mdns,
             available_connections: HashSet::new(),
+            instance_name: None,
         }))
     }
 
@@ -78,7 +80,11 @@ impl ConnectionManager {
         self.mdns_daemon
             .stop_browse(MDNS_SERVICE_TYPE)
             .map_err(|e| DiscoveryError::ShutdownError(e))?;
-        // TODO: De-register our local service
+        if let Some(ref name) = self.instance_name {
+            self.mdns_daemon
+                .unregister(name)
+                .map_err(|e| DiscoveryError::ShutdownError(e))?;
+        }
         self.mdns_daemon
             .shutdown()
             .map_err(|e| DiscoveryError::ShutdownError(e))?;
@@ -105,7 +111,7 @@ pub mod commands {
         let user_details_lock = handle.state::<Mutex<UserConfig>>();
         let user_details = user_details_lock.lock().unwrap();
         let cm_lock = handle.state::<Mutex<ConnectionManager>>();
-        let connection_manager = cm_lock.lock().unwrap();
+        let mut connection_manager = cm_lock.lock().unwrap();
 
         let service = ServiceInfo::new(
             MDNS_SERVICE_TYPE,
@@ -117,6 +123,7 @@ pub mod commands {
         )
         .map_err(|e| DiscoveryError::ServiceError(e))?
         .enable_addr_auto();
+        connection_manager.instance_name = Some(service.get_fullname().to_string());
         connection_manager
             .mdns_daemon
             .register(service)
