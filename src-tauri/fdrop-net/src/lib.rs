@@ -5,6 +5,7 @@ use socket2::{Domain, Type};
 use std::{
     collections::HashSet,
     hash::Hash,
+    io::Read,
     net::{IpAddr, Ipv6Addr, SocketAddrV6, TcpListener, TcpStream},
     sync::Mutex,
     thread,
@@ -14,6 +15,7 @@ use tracing::info;
 
 const MDNS_SERVICE_TYPE: &str = "_fdrop._tcp.local.";
 const FDROP_PORT: u16 = 10116;
+const DEVICE_DISCOVERED: &str = "device-discovered";
 
 #[derive(thiserror::Error, Debug)]
 pub enum ConnectionError {
@@ -116,7 +118,7 @@ impl ConnectionManager {
     }
 }
 
-fn accept_connections() -> Result<(), ConnectionError> {
+pub fn accept_connections() -> Result<(), ConnectionError> {
     let socket = socket2::Socket::new(Domain::IPV6, Type::STREAM, None)?;
     socket.set_only_v6(false)?;
     let address = SocketAddrV6::new(Ipv6Addr::UNSPECIFIED, FDROP_PORT, 0, 0);
@@ -124,14 +126,16 @@ fn accept_connections() -> Result<(), ConnectionError> {
     socket.listen(128)?;
     let listener: TcpListener = socket.into();
 
-    // TODO: look into error checking here
     thread::spawn(move || -> Result<(), ConnectionError> {
+        // TODO: look into error checking here
         // let cm_lock = handle.state::<Mutex<ConnectionManager>>();
         // let mut connection_manager = cm_lock.lock().unwrap();
         for stream in listener.incoming() {
             match stream {
-                Ok(stream) => {
-                    todo!();
+                Ok(mut stream) => {
+                    let mut buff = [0; 1024];
+                    let n = stream.read(&mut buff)?;
+                    println!("{:?}", &buff[0..n]);
                 }
                 Err(e) => { /* connection failed */ }
             }
@@ -185,13 +189,14 @@ fn launch_discovery_service(handle: AppHandle) -> Result<(), DiscoveryError> {
                     let cm_lock = handle.state::<Mutex<ConnectionManager>>();
                     let mut connection_manager = cm_lock.lock().unwrap();
                     let con = Connection::from(&info);
-                    handle.emit("device-discovered", &con.name)?;
+                    handle.emit(DEVICE_DISCOVERED, &con.name)?;
                     connection_manager.available_connections.replace(con);
                     info!("found device with name: {}", info.get_fullname());
                 }
                 ServiceEvent::SearchStopped(ss) if ss == MDNS_SERVICE_TYPE => {
                     break;
                 }
+                ServiceEvent::SearchStarted(_) => {}
                 other_event => {
                     info!("Received other event: {:?}", &other_event);
                 }
