@@ -24,7 +24,7 @@
   getActivePage().subscribe((value: any) => {
     transitionPage(value, activePage!, pages);
     if (value == 2) {
-      invoke("launch_discovery_service");
+      invoke("enable_networking");
     }
     activePage = value;
   });

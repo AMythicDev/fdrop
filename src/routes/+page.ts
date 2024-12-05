@@ -5,7 +5,7 @@ export function load(params: any) {
     if (res) {
       window.location.href = "/welcome";
     } else {
-      invoke("launch_discovery_service");
+      invoke("enable_networking");
     }
   });
 }

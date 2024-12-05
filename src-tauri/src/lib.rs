@@ -17,7 +17,7 @@ pub fn run() {
             fdrop_config::commands::check_first_launch,
             fdrop_config::commands::initial_setup,
             fdrop_config::commands::generate_keys,
-            fdrop_net::commands::launch_discovery_service,
+            fdrop_net::commands::enable_networking,
         ])
         .setup(|app| {
             let connection_manager = fdrop_net::ConnectionManager::new()?;
