@@ -1,10 +1,24 @@
 use fdrop_common::human_readable_error;
 use mdns_sd::{ServiceDaemon, ServiceEvent, ServiceInfo};
-use std::{collections::HashSet, hash::Hash, net::IpAddr, sync::Mutex};
+use socket2::{Domain, Type};
+use std::{
+    collections::HashSet,
+    hash::Hash,
+    net::{IpAddr, Ipv6Addr, SocketAddrV6, TcpListener, TcpStream},
+    sync::Mutex,
+};
 use tracing::info;
 
-const MDNS_SERVICE_TYPE: &str = "_fdrop._udp.local.";
+const MDNS_SERVICE_TYPE: &str = "_fdrop._tcp.local.";
 const FDROP_PORT: u16 = 10116;
+
+#[derive(thiserror::Error, Debug)]
+pub enum ConnectionError {
+    #[error("discovery error")]
+    DiscoveryError(#[from] DiscoveryError),
+    #[error("IO error")]
+    Io(#[from] std::io::Error),
+}
 
 #[derive(thiserror::Error, Debug)]
 pub enum DiscoveryError {
@@ -24,8 +38,8 @@ pub enum DiscoveryError {
     TauriError(#[from] tauri::Error),
 }
 
-impl From<DiscoveryError> for String {
-    fn from(value: DiscoveryError) -> Self {
+impl From<ConnectionError> for String {
+    fn from(value: ConnectionError) -> Self {
         human_readable_error(&value)
     }
 }
@@ -34,6 +48,7 @@ impl From<DiscoveryError> for String {
 pub struct Connection {
     name: String,
     addresses: Vec<IpAddr>,
+    known: bool,
 }
 
 impl PartialEq for Connection {
@@ -56,6 +71,7 @@ impl From<&ServiceInfo> for Connection {
             // TODO: Get proper name
             name: value.get_fullname().to_string(),
             addresses: value.get_addresses().iter().map(|i| *i).collect(),
+            known: false,
         }
     }
 }
@@ -64,15 +80,23 @@ pub struct ConnectionManager {
     mdns_daemon: ServiceDaemon,
     available_connections: HashSet<Connection>,
     instance_name: Option<String>,
+    listener: TcpListener,
 }
 
 impl ConnectionManager {
-    pub fn new() -> Result<Mutex<Self>, DiscoveryError> {
+    pub fn new() -> Result<Mutex<Self>, ConnectionError> {
         let mdns = ServiceDaemon::new().map_err(|e| DiscoveryError::ServiceDaemonError(e))?;
+        let socket = socket2::Socket::new(Domain::IPV6, Type::STREAM, None)?;
+        socket.set_only_v6(false)?;
+        let address = SocketAddrV6::new(Ipv6Addr::UNSPECIFIED, FDROP_PORT, 0, 0);
+        socket.bind(&address.into())?;
+        socket.listen(128)?;
+
         Ok(Mutex::new(Self {
             mdns_daemon: mdns,
             available_connections: HashSet::new(),
             instance_name: None,
+            listener: socket.into(),
         }))
     }
 
@@ -104,7 +128,8 @@ pub mod commands {
 
     #[tauri::command]
     pub fn launch_discovery_service(handle: AppHandle) -> Result<(), String> {
-        let hs = whoami::fallible::hostname().map_err(|e| DiscoveryError::HostnameError(e))?;
+        let hs = whoami::fallible::hostname()
+            .map_err(|e| ConnectionError::from(DiscoveryError::HostnameError(e)))?;
         let local_hostname = format!("{}.local.", hs);
 
         // TODO: look into error checking here
@@ -121,17 +146,17 @@ pub mod commands {
             FDROP_PORT,
             None,
         )
-        .map_err(|e| DiscoveryError::ServiceError(e))?
+        .map_err(|e| ConnectionError::from(DiscoveryError::ServiceError(e)))?
         .enable_addr_auto();
         connection_manager.instance_name = Some(service.get_fullname().to_string());
         connection_manager
             .mdns_daemon
             .register(service)
-            .map_err(|e| DiscoveryError::ServiceDaemonError(e))?;
+            .map_err(|e| ConnectionError::from(DiscoveryError::ServiceDaemonError(e)))?;
         let receiver = connection_manager
             .mdns_daemon
             .browse(MDNS_SERVICE_TYPE)
-            .map_err(|e| DiscoveryError::BrowseError(e))?;
+            .map_err(|e| ConnectionError::from(DiscoveryError::BrowseError(e)))?;
         info!("successfully created mdns service daemon");
         drop(connection_manager);
         drop(user_details);
