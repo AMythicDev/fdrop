@@ -1,11 +1,22 @@
 use fdrop_net::ConnectionManager;
+use std::str::FromStr;
 use std::sync::Mutex;
 use tauri::{Manager, WindowEvent};
 use tracing::info;
+use tracing_subscriber::{filter::Directive, EnvFilter};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tracing_subscriber::fmt().compact().init();
+    let envfilter = EnvFilter::builder()
+        .with_regex(false)
+        .with_env_var("FDROP_LOG")
+        .with_default_directive(Directive::from_str("info").unwrap())
+        .from_env_lossy();
+
+    tracing_subscriber::fmt()
+        .compact()
+        .with_env_filter(envfilter)
+        .init();
     info!("logging enabled");
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())

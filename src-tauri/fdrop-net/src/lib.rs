@@ -11,7 +11,7 @@ use std::{
     thread,
 };
 use tauri::{AppHandle, Emitter, Manager};
-use tracing::info;
+use tracing::{info, warn};
 
 const MDNS_SERVICE_TYPE: &str = "_fdrop._tcp.local.";
 const FDROP_PORT: u16 = 10116;
@@ -125,6 +125,7 @@ pub fn accept_connections() -> Result<(), ConnectionError> {
     socket.bind(&address.into())?;
     socket.listen(128)?;
     let listener: TcpListener = socket.into();
+    info!("created the connection acceptor");
 
     thread::spawn(move || -> Result<(), ConnectionError> {
         // TODO: look into error checking here
@@ -137,7 +138,7 @@ pub fn accept_connections() -> Result<(), ConnectionError> {
                     let n = stream.read(&mut buff)?;
                     println!("{:?}", &buff[0..n]);
                 }
-                Err(e) => { /* connection failed */ }
+                Err(e) => warn!("failed to connect to client with address due to {e}"),
             }
         }
         Ok(())
