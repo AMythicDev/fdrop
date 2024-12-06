@@ -1,7 +1,7 @@
 mod definitions;
 mod errors;
 
-use definitions::MessageType;
+use definitions::{LinkResponse, MessageType};
 use errors::{CommunicationError, DiscoveryError, NetworkError};
 use fdrop_config::UserConfig;
 use mdns_sd::{ServiceDaemon, ServiceEvent, ServiceInfo};
@@ -56,7 +56,12 @@ impl From<&ServiceInfo> for Connection {
 }
 
 impl Connection {
-    fn send_link_request(&mut self) -> Result<(), CommunicationError> {
+    pub(crate) fn send_link_request(
+        &mut self,
+    ) -> Result<definitions::LinkResponse, CommunicationError> {
+        if self.stream.is_some() {
+            return Ok(LinkResponse::Accepted);
+        }
         for addr in &self.addresses {
             let stream = TcpStream::connect(SocketAddr::new(addr.clone(), FDROP_PORT));
             if let Ok(mut sock) = stream {
@@ -69,7 +74,7 @@ impl Connection {
                     .map_err(|e| CommunicationError::WriteError(e))?;
                 // TODO Read back response
                 self.stream = Some(sock);
-                return Ok(());
+                return Ok(LinkResponse::Accepted);
             }
         }
         Err(CommunicationError::NoReachableAddress)
@@ -211,6 +216,26 @@ pub mod commands {
     pub fn enable_networking(handle: AppHandle) -> Result<(), String> {
         launch_discovery_service(handle).map_err(|e| NetworkError::from(e))?;
         accept_connections().map_err(|e| NetworkError::from(e))?;
+        Ok(())
+    }
+
+    #[tauri::command]
+    pub async fn link_device_by_name(handle: AppHandle, name: String) -> Result<(), String> {
+        let cm_lock = handle.state::<Mutex<ConnectionManager>>();
+        let mut connection_manager = cm_lock.lock().unwrap();
+        let fake_connection = Connection {
+            name,
+            addresses: vec![],
+            stream: None,
+        };
+        // TODO: Handle error
+        let mut actual_connection = connection_manager
+            .available_connections
+            .take(&fake_connection)
+            .unwrap();
+        actual_connection
+            .send_link_request()
+            .map_err(|e| NetworkError::from(e))?;
         Ok(())
     }
 }

@@ -29,6 +29,7 @@ pub fn run() {
             fdrop_config::commands::initial_setup,
             fdrop_config::commands::generate_keys,
             fdrop_net::commands::enable_networking,
+            fdrop_net::commands::link_device_by_name,
         ])
         .setup(|app| {
             let connection_manager = fdrop_net::ConnectionManager::new()?;
