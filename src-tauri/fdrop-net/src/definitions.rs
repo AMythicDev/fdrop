@@ -8,7 +8,7 @@ pub use protobuf::*;
 
 #[repr(u8)]
 pub enum MessageType {
-    Authentication = 1 << 7,
+    Link = 1 << 7,
 }
 
 pub fn encode(mtype: MessageType, message: impl Message) -> Bytes {

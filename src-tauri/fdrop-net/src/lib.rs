@@ -9,8 +9,8 @@ use socket2::{Domain, Type};
 use std::{
     collections::HashSet,
     hash::Hash,
-    io::Read,
-    net::{IpAddr, Ipv6Addr, SocketAddrV6, TcpListener, TcpStream},
+    io::{Read, Write},
+    net::{IpAddr, Ipv6Addr, SocketAddr, SocketAddrV6, TcpListener, TcpStream},
     sync::Mutex,
     thread,
 };
@@ -21,11 +21,11 @@ const MDNS_SERVICE_TYPE: &str = "_fdrop._tcp.local.";
 const FDROP_PORT: u16 = 10116;
 const DEVICE_DISCOVERED: &str = "device-discovered";
 
-#[derive(Debug, Eq)]
+#[derive(Debug)]
 pub struct Connection {
     name: String,
     addresses: Vec<IpAddr>,
-    known: bool,
+    stream: Option<TcpStream>,
 }
 
 impl PartialEq for Connection {
@@ -33,6 +33,8 @@ impl PartialEq for Connection {
         self.name == other.name
     }
 }
+
+impl Eq for Connection {}
 
 impl Hash for Connection {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
@@ -48,8 +50,29 @@ impl From<&ServiceInfo> for Connection {
             // TODO: Get proper name
             name: value.get_fullname().to_string(),
             addresses: value.get_addresses().iter().map(|i| *i).collect(),
-            known: false,
+            stream: None,
         }
+    }
+}
+
+impl Connection {
+    fn send_link_request(&mut self) -> Result<(), CommunicationError> {
+        for addr in &self.addresses {
+            let stream = TcpStream::connect(SocketAddr::new(addr.clone(), FDROP_PORT));
+            if let Ok(mut sock) = stream {
+                let message = definitions::protobuf::Link {
+                    request: Some(true),
+                    response: None,
+                };
+                let auth_message = definitions::encode(MessageType::Link, message);
+                sock.write_all(&*auth_message)
+                    .map_err(|e| CommunicationError::WriteError(e))?;
+                // TODO Read back response
+                self.stream = Some(sock);
+                return Ok(());
+            }
+        }
+        Err(CommunicationError::NoReachableAddress)
     }
 }
 

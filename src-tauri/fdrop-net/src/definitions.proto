@@ -2,12 +2,12 @@ syntax = "proto3";
 
 package fdrop_net.definitons;
 
-message Authenticate {
+message Link {
     optional bool request = 1;
-    optional Response response = 2;
+    optional LinkResponse response = 2;
 }
 
-enum Response {
+enum LinkResponse {
     REJECTED = 0;
     ACCEPTED = 1;
     OTHER = 2;
