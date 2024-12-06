@@ -13,13 +13,11 @@ use std::{
 use tauri::{AppHandle, Emitter, Manager};
 use tracing::{info, warn};
 
+mod definitions;
+
 const MDNS_SERVICE_TYPE: &str = "_fdrop._tcp.local.";
 const FDROP_PORT: u16 = 10116;
 const DEVICE_DISCOVERED: &str = "device-discovered";
-
-pub mod definitions {
-    include!(concat!(env!("OUT_DIR"), "/fdrop_net.definitons.rs"));
-}
 
 #[derive(thiserror::Error, Debug)]
 pub enum ConnectionError {
