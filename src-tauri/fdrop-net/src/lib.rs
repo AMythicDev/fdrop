@@ -1,4 +1,8 @@
-use fdrop_common::human_readable_error;
+mod definitions;
+mod errors;
+
+use definitions::MessageType;
+use errors::{CommunicationError, DiscoveryError, NetworkError};
 use fdrop_config::UserConfig;
 use mdns_sd::{ServiceDaemon, ServiceEvent, ServiceInfo};
 use socket2::{Domain, Type};
@@ -13,43 +17,9 @@ use std::{
 use tauri::{AppHandle, Emitter, Manager};
 use tracing::{info, warn};
 
-mod definitions;
-
 const MDNS_SERVICE_TYPE: &str = "_fdrop._tcp.local.";
 const FDROP_PORT: u16 = 10116;
 const DEVICE_DISCOVERED: &str = "device-discovered";
-
-#[derive(thiserror::Error, Debug)]
-pub enum ConnectionError {
-    #[error("discovery error")]
-    DiscoveryError(#[from] DiscoveryError),
-    #[error("IO error")]
-    Io(#[from] std::io::Error),
-}
-
-#[derive(thiserror::Error, Debug)]
-pub enum DiscoveryError {
-    #[error("service error")]
-    ServiceError(mdns_sd::Error),
-    #[error("failed to create mDNS service daemon")]
-    ServiceDaemonError(mdns_sd::Error),
-    #[error("failed to register service with mDNS service daemon")]
-    ServiceRegisterError(mdns_sd::Error),
-    #[error("failed to browse service with mDNS service daemon")]
-    BrowseError(mdns_sd::Error),
-    #[error("cannot determine system hostname")]
-    HostnameError(std::io::Error),
-    #[error("mDNS shutdown error")]
-    ShutdownError(mdns_sd::Error),
-    #[error(transparent)]
-    TauriError(#[from] tauri::Error),
-}
-
-impl From<ConnectionError> for String {
-    fn from(value: ConnectionError) -> Self {
-        human_readable_error(&value)
-    }
-}
 
 #[derive(Debug, Eq)]
 pub struct Connection {
@@ -90,7 +60,7 @@ pub struct ConnectionManager {
 }
 
 impl ConnectionManager {
-    pub fn new() -> Result<Mutex<Self>, ConnectionError> {
+    pub fn new() -> Result<Mutex<Self>, NetworkError> {
         let mdns = ServiceDaemon::new().map_err(|e| DiscoveryError::ServiceDaemonError(e))?;
         Ok(Mutex::new(Self {
             mdns_daemon: mdns,
@@ -120,7 +90,7 @@ impl ConnectionManager {
     }
 }
 
-pub fn accept_connections() -> Result<(), ConnectionError> {
+pub fn accept_connections() -> Result<(), CommunicationError> {
     let socket = socket2::Socket::new(Domain::IPV6, Type::STREAM, None)?;
     socket.set_only_v6(false)?;
     let address = SocketAddrV6::new(Ipv6Addr::UNSPECIFIED, FDROP_PORT, 0, 0);
@@ -129,7 +99,7 @@ pub fn accept_connections() -> Result<(), ConnectionError> {
     let listener: TcpListener = socket.into();
     info!("created the connection acceptor");
 
-    thread::spawn(move || -> Result<(), ConnectionError> {
+    thread::spawn(move || -> Result<(), CommunicationError> {
         // TODO: look into error checking here
         // let cm_lock = handle.state::<Mutex<ConnectionManager>>();
         // let mut connection_manager = cm_lock.lock().unwrap();
@@ -137,7 +107,9 @@ pub fn accept_connections() -> Result<(), ConnectionError> {
             match stream {
                 Ok(mut stream) => {
                     let mut buff = [0; 1024];
-                    let n = stream.read(&mut buff)?;
+                    let n = stream
+                        .read(&mut buff)
+                        .map_err(|e| CommunicationError::ReadError(e))?;
                     println!("{:?}", &buff[0..n]);
                 }
                 Err(e) => warn!("failed to connect to client with address due to {e}"),
@@ -214,8 +186,8 @@ pub mod commands {
     use super::*;
     #[tauri::command]
     pub fn enable_networking(handle: AppHandle) -> Result<(), String> {
-        launch_discovery_service(handle).map_err(|e| ConnectionError::from(e))?;
-        accept_connections()?;
+        launch_discovery_service(handle).map_err(|e| NetworkError::from(e))?;
+        accept_connections().map_err(|e| NetworkError::from(e))?;
         Ok(())
     }
 }
