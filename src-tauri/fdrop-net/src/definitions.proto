@@ -1,0 +1,14 @@
+syntax = "proto3";
+
+package fdrop_net.definitons;
+
+message Authenticate {
+    optional bool request = 1;
+    optional Response response = 2;
+}
+
+enum Response {
+    REJECTED = 0;
+    ACCEPTED = 1;
+    OTHER = 2;
+}
