@@ -22,6 +22,7 @@ whoami.workspace = true
 socket2 = "0.5.8"
 prost = "0.13.3"
 bytes = "1.9.0"
+flume = "0.11.1"
 
 [dev-dependencies]
 tracing-subscriber = { version = "0.3" }

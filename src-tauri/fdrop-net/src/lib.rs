@@ -27,7 +27,7 @@ const DEVICE_DISCOVERED: &str = "device-discovered";
 pub struct Connection {
     name: String,
     addresses: Vec<IpAddr>,
-    stream: Option<TcpStream>,
+    tx: Option<Sender<Bytes>>,
 }
 
 impl PartialEq for Connection {
@@ -52,7 +52,8 @@ impl From<&ServiceInfo> for Connection {
             // TODO: Get proper name
             name: value.get_fullname().to_string(),
             addresses: value.get_addresses().iter().map(|i| *i).collect(),
-            stream: None,
+            tx: None,
+            // rx: None,
         }
     }
 }
@@ -60,6 +61,15 @@ impl From<&ServiceInfo> for Connection {
 impl Connection {
     async fn send_link_request(&mut self) -> Result<definitions::LinkResponse, CommunicationError> {
         if self.stream.is_some() {
+    pub(crate) fn create_empty_connection_with_name(name: String) -> Self {
+        Self {
+            name,
+            addresses: vec![],
+            tx: None,
+            // rx: None,
+        }
+    }
+
             return Ok(LinkResponse::Accepted);
         }
         for addr in &self.addresses {
@@ -114,8 +124,9 @@ impl ConnectionManager {
         Ok(())
     }
 
-    pub fn get_availble_connections(&self) -> &HashSet<Connection> {
-        &self.available_connections
+    pub(crate) fn take_connection_by_name(&mut self, name: String) -> Option<Connection> {
+        let fake_connection = Connection::create_empty_connection_with_name(name);
+        self.available_connections.take(&fake_connection)
     }
 }
 
