@@ -9,12 +9,14 @@ use socket2::{Domain, Type};
 use std::{
     collections::HashSet,
     hash::Hash,
-    io::{Read, Write},
-    net::{IpAddr, Ipv6Addr, SocketAddr, SocketAddrV6, TcpListener, TcpStream},
+    net::{IpAddr, Ipv6Addr, SocketAddr, SocketAddrV6},
     sync::Mutex,
-    thread,
 };
 use tauri::{AppHandle, Emitter, Manager};
+use tokio::{
+    io::{AsyncReadExt, AsyncWriteExt},
+    net::{TcpListener, TcpStream},
+};
 use tracing::{info, warn};
 
 const MDNS_SERVICE_TYPE: &str = "_fdrop._tcp.local.";
@@ -56,14 +58,14 @@ impl From<&ServiceInfo> for Connection {
 }
 
 impl Connection {
-    pub(crate) fn send_link_request(
+    pub(crate) async fn send_link_request(
         &mut self,
     ) -> Result<definitions::LinkResponse, CommunicationError> {
         if self.stream.is_some() {
             return Ok(LinkResponse::Accepted);
         }
         for addr in &self.addresses {
-            let stream = TcpStream::connect(SocketAddr::new(addr.clone(), FDROP_PORT));
+            let stream = TcpStream::connect(SocketAddr::new(addr.clone(), FDROP_PORT)).await;
             if let Ok(mut sock) = stream {
                 let message = definitions::protobuf::Link {
                     request: Some(true),
@@ -71,6 +73,7 @@ impl Connection {
                 };
                 let auth_message = definitions::encode(MessageType::Link, message);
                 sock.write_all(&*auth_message)
+                    .await
                     .map_err(|e| CommunicationError::WriteError(e))?;
                 // TODO Read back response
                 self.stream = Some(sock);
@@ -118,32 +121,37 @@ impl ConnectionManager {
     }
 }
 
-pub fn accept_connections() -> Result<(), CommunicationError> {
+pub async fn accept_connections() -> Result<(), CommunicationError> {
     let socket = socket2::Socket::new(Domain::IPV6, Type::STREAM, None)?;
     socket.set_only_v6(false)?;
     let address = SocketAddrV6::new(Ipv6Addr::UNSPECIFIED, FDROP_PORT, 0, 0);
     socket.bind(&address.into())?;
     socket.listen(128)?;
-    let listener: TcpListener = socket.into();
+    let std_listener: std::net::TcpListener = socket.into();
+    let listener: TcpListener = TcpListener::from_std(std_listener)?;
     info!("created the connection acceptor");
 
-    thread::spawn(move || -> Result<(), CommunicationError> {
+    tokio::spawn(async move {
         // TODO: look into error checking here
         // let cm_lock = handle.state::<Mutex<ConnectionManager>>();
         // let mut connection_manager = cm_lock.lock().unwrap();
-        for stream in listener.incoming() {
-            match stream {
-                Ok(mut stream) => {
+        loop {
+            let conn = listener.accept().await;
+            match conn {
+                Ok((mut stream, _)) => {
                     let mut buff = [0; 1024];
-                    let n = stream
+                    let read_res = stream
                         .read(&mut buff)
-                        .map_err(|e| CommunicationError::ReadError(e))?;
-                    println!("{:?}", &buff[0..n]);
+                        .await
+                        .map_err(|e| CommunicationError::ReadError(e));
+                    if let Err(e) = read_res {
+                        warn!("failed to read from peer socket due to {e}");
+                    }
+                    // println!("{:?}", &buff[0..n]);
                 }
-                Err(e) => warn!("failed to connect to client with address due to {e}"),
+                Err(e) => warn!("failed to connect to peer due to {e}"),
             }
         }
-        Ok(())
     });
     Ok(())
 }
@@ -213,29 +221,39 @@ fn launch_discovery_service(handle: AppHandle) -> Result<(), DiscoveryError> {
 pub mod commands {
     use super::*;
     #[tauri::command]
-    pub fn enable_networking(handle: AppHandle) -> Result<(), String> {
+    pub async fn enable_networking(handle: AppHandle) -> Result<(), String> {
         launch_discovery_service(handle).map_err(|e| NetworkError::from(e))?;
-        accept_connections().map_err(|e| NetworkError::from(e))?;
+        accept_connections()
+            .await
+            .map_err(|e| NetworkError::from(e))?;
         Ok(())
     }
 
     #[tauri::command]
     pub async fn link_device_by_name(handle: AppHandle, name: String) -> Result<(), String> {
-        let cm_lock = handle.state::<Mutex<ConnectionManager>>();
-        let mut connection_manager = cm_lock.lock().unwrap();
-        let fake_connection = Connection {
-            name,
-            addresses: vec![],
-            stream: None,
+        let mut actual_connection = {
+            let cm_lock = handle.state::<Mutex<ConnectionManager>>();
+            let mut connection_manager = cm_lock.lock().unwrap();
+            let fake_connection = Connection {
+                name,
+                addresses: vec![],
+                stream: None,
+            };
+            // TODO: Handle error
+            connection_manager
+                .available_connections
+                .take(&fake_connection)
+                .unwrap()
         };
-        // TODO: Handle error
-        let mut actual_connection = connection_manager
-            .available_connections
-            .take(&fake_connection)
-            .unwrap();
         actual_connection
             .send_link_request()
+            .await
             .map_err(|e| NetworkError::from(e))?;
+        let cm_lock = handle.state::<Mutex<ConnectionManager>>();
+        let mut connection_manager = cm_lock.lock().unwrap();
+        connection_manager
+            .available_connections
+            .insert(actual_connection);
         Ok(())
     }
 }
