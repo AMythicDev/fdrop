@@ -1,7 +1,7 @@
 mod definitions;
 mod errors;
 
-use definitions::{LinkResponse, MessageType};
+use definitions::{encode, LinkResponse, MessageType};
 use errors::{CommunicationError, DiscoveryError, NetworkError};
 use fdrop_config::UserConfig;
 use mdns_sd::{ServiceDaemon, ServiceEvent, ServiceInfo};
@@ -58,9 +58,7 @@ impl From<&ServiceInfo> for Connection {
 }
 
 impl Connection {
-    pub(crate) async fn send_link_request(
-        &mut self,
-    ) -> Result<definitions::LinkResponse, CommunicationError> {
+    async fn send_link_request(&mut self) -> Result<definitions::LinkResponse, CommunicationError> {
         if self.stream.is_some() {
             return Ok(LinkResponse::Accepted);
         }
@@ -75,7 +73,7 @@ impl Connection {
                 sock.write_all(&*auth_message)
                     .await
                     .map_err(|e| CommunicationError::WriteError(e))?;
-                // TODO Read back response
+                let (_, _, _) = read_stream(&mut sock).await?;
                 self.stream = Some(sock);
                 return Ok(LinkResponse::Accepted);
             }
@@ -121,7 +119,7 @@ impl ConnectionManager {
     }
 }
 
-pub async fn accept_connections() -> Result<(), CommunicationError> {
+async fn accept_connections() -> Result<(), CommunicationError> {
     let socket = socket2::Socket::new(Domain::IPV6, Type::STREAM, None)?;
     socket.set_only_v6(false)?;
     let address = SocketAddrV6::new(Ipv6Addr::UNSPECIFIED, FDROP_PORT, 0, 0);
@@ -139,15 +137,7 @@ pub async fn accept_connections() -> Result<(), CommunicationError> {
             let conn = listener.accept().await;
             match conn {
                 Ok((mut stream, _)) => {
-                    let mut buff = [0; 1024];
-                    let read_res = stream
-                        .read(&mut buff)
-                        .await
-                        .map_err(|e| CommunicationError::ReadError(e));
-                    if let Err(e) = read_res {
-                        warn!("failed to read from peer socket due to {e}");
-                    }
-                    // println!("{:?}", &buff[0..n]);
+                    handle_stream(&mut stream).await;
                 }
                 Err(e) => warn!("failed to connect to peer due to {e}"),
             }
@@ -216,6 +206,49 @@ fn launch_discovery_service(handle: AppHandle) -> Result<(), DiscoveryError> {
         Ok(())
     });
     Ok(())
+}
+
+async fn read_stream(
+    stream: &mut TcpStream,
+) -> Result<(MessageType, u16, [u8; 2048]), CommunicationError> {
+    const MAX_PAYLOAD_SIZE: usize = 2048;
+    let mut payload = [0u8; MAX_PAYLOAD_SIZE];
+    let mtype_u8 = stream
+        .read_u8()
+        .await
+        .map_err(|e| CommunicationError::ReadError(e))?;
+    let mtype = MessageType::try_from(mtype_u8)?;
+    let payload_size = stream
+        .read_u16()
+        .await
+        .map_err(|e| CommunicationError::ReadError(e))?;
+    if payload_size > (MAX_PAYLOAD_SIZE as u16) {
+        // Return a response with invalid payload error
+        todo!();
+    }
+    stream
+        .read_exact(&mut payload[0..(payload_size as usize)])
+        .await
+        .map_err(|e| CommunicationError::ReadError(e))?;
+    println!("{:?}", &payload[0..(payload_size as usize)]);
+    Ok((mtype, payload_size, payload))
+}
+
+async fn handle_stream(stream: &mut TcpStream) -> Result<(), CommunicationError> {
+    loop {
+        let (mtype, _, _) = read_stream(stream).await?;
+        match mtype {
+            MessageType::Link => {
+                let message = definitions::protobuf::Link {
+                    request: None,
+                    response: Some(LinkResponse::Accepted as i32),
+                };
+                stream
+                    .write_all(&*encode(MessageType::Link, message))
+                    .await?;
+            }
+        }
+    }
 }
 
 pub mod commands {
