@@ -93,8 +93,8 @@ impl Connection {
                 sock.write_all(&auth_message)
                     .await
                     .map_err(|e| CommunicationError::WriteError(e))?;
-                let (_, _, _) = read_stream(&mut sock).await?;
-                self.stream = Some(sock);
+                let (_, _) = read_stream(&mut sock).await.unwrap();
+                // self.stream = Some(sock);
                 return Ok(LinkResponse::Accepted);
             }
         }
@@ -229,11 +229,8 @@ fn launch_discovery_service(handle: AppHandle) -> Result<(), DiscoveryError> {
     Ok(())
 }
 
-async fn read_stream(
-    stream: &mut TcpStream,
-) -> Result<(MessageType, u16, [u8; 2048]), CommunicationError> {
+async fn read_stream(stream: &mut TcpStream) -> Result<(MessageType, Bytes), CommunicationError> {
     const MAX_PAYLOAD_SIZE: usize = 2048;
-    let mut payload = [0u8; MAX_PAYLOAD_SIZE];
     let mtype_u8 = stream
         .read_u8()
         .await
@@ -247,12 +244,13 @@ async fn read_stream(
         // Return a response with invalid payload error
         todo!();
     }
+    let mut payload = BytesMut::zeroed((payload_size).into());
     stream
-        .read_exact(&mut payload[0..(payload_size as usize)])
+        .read_exact(&mut payload)
         .await
         .map_err(|e| CommunicationError::ReadError(e))?;
-    println!("{:?}", &payload[0..(payload_size as usize)]);
-    Ok((mtype, payload_size, payload))
+    println!("{} {} {:?}", mtype_u8, payload_size, &payload);
+    Ok((mtype, payload.freeze()))
 }
 
 async fn handle_stream(stream: &mut TcpStream) -> Result<(), CommunicationError> {
