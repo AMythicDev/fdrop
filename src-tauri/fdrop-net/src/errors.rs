@@ -11,10 +11,14 @@ pub enum NetworkError {
 pub enum CommunicationError {
     #[error("failed to write to the socket")]
     WriteError(std::io::Error),
-    #[error("failed to write to the socket")]
+    #[error("failed to read to the socket")]
     ReadError(std::io::Error),
+    #[error("failed to decode peer message")]
+    DecodeError,
     #[error("no reachable address for the peer")]
     NoReachableAddress,
+    #[error("peer sent unexpected messages before linking")]
+    Unauthenticated,
     #[error("IO error")]
     Io(#[from] std::io::Error),
 }

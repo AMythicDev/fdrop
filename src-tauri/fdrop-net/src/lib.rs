@@ -253,21 +253,47 @@ async fn read_stream(stream: &mut TcpStream) -> Result<(MessageType, Bytes), Com
     Ok((mtype, payload.freeze()))
 }
 
-async fn handle_stream(stream: &mut TcpStream) -> Result<(), CommunicationError> {
-    loop {
-        let (mtype, _, _) = read_stream(stream).await?;
-        match mtype {
-            MessageType::Link => {
-                let message = definitions::protobuf::Link {
-                    request: None,
-                    response: Some(LinkResponse::Accepted as i32),
-                };
-                stream
-                    .write_all(&*encode(MessageType::Link, message))
-                    .await?;
-            }
-        }
+async fn handle_stream(mut stream: TcpStream, handle: AppHandle) -> Result<(), CommunicationError> {
+    info!("issued a handler for peer");
+    let is_linked = false;
+
+    info!("reading inital message");
+    let (mtype, payload) = read_stream(&mut stream).await?;
+    if !is_linked && mtype != MessageType::Link {
+        warn!("peer sent unexpected messages before linking");
+        return Err(CommunicationError::Unauthenticated);
     }
+
+    let link_req = definitions::protobuf::Link::decode(payload);
+    if let Ok(message) = link_req {
+        info!(
+            "received link request from peer '{}'. authenticating",
+            message.name
+        );
+        let cm_lock = handle.state::<Mutex<ConnectionManager>>();
+        let mut connection_manager = cm_lock.lock().unwrap();
+        let full_name = message.name + "." + MDNS_SERVICE_TYPE;
+        if let Some(mut conn) = connection_manager.take_connection_by_name(full_name) {
+            let (tx, rx) = bounded(100);
+            conn.tx = Some(tx);
+            connection_manager.available_connections.insert(conn);
+            drop(connection_manager);
+            // TODO: send response back
+            info!("sending control of stream to post auth handler");
+            tokio::spawn(async move { handle_postauth_stream(stream, rx, handle) });
+        } else {
+            warn!("cannot find the peer in available client list");
+            todo!();
+        }
+    } else {
+        warn!("received invalid protobuf payload");
+        return Err(CommunicationError::DecodeError);
+    }
+    Ok(())
+}
+
+async fn handle_postauth_stream(stream: TcpStream, rx: Receiver<Bytes>, handle: AppHandle) {
+    todo!();
 }
 
 pub mod commands {
