@@ -4,7 +4,8 @@ package fdrop_net.definitons;
 
 message Link {
     optional bool request = 1;
-    optional LinkResponse response = 2;
+    string name = 2;
+    optional LinkResponse response = 3;
 }
 
 enum LinkResponse {

@@ -1,10 +1,13 @@
 mod definitions;
 mod errors;
 
-use definitions::{encode, LinkResponse, MessageType};
+use bytes::{Bytes, BytesMut};
+use definitions::{LinkResponse, MessageType};
 use errors::{CommunicationError, DiscoveryError, NetworkError};
 use fdrop_config::UserConfig;
+use flume::{bounded, Receiver, Sender};
 use mdns_sd::{ServiceDaemon, ServiceEvent, ServiceInfo};
+use prost::Message;
 use socket2::{Domain, Type};
 use std::{
     collections::HashSet,
@@ -28,6 +31,7 @@ pub struct Connection {
     name: String,
     addresses: Vec<IpAddr>,
     tx: Option<Sender<Bytes>>,
+    // rx: Option<Receiver<Bytes>>,
 }
 
 impl PartialEq for Connection {
@@ -59,8 +63,6 @@ impl From<&ServiceInfo> for Connection {
 }
 
 impl Connection {
-    async fn send_link_request(&mut self) -> Result<definitions::LinkResponse, CommunicationError> {
-        if self.stream.is_some() {
     pub(crate) fn create_empty_connection_with_name(name: String) -> Self {
         Self {
             name,
@@ -70,6 +72,11 @@ impl Connection {
         }
     }
 
+    async fn send_link_request(
+        &mut self,
+        our_name: String,
+    ) -> Result<LinkResponse, CommunicationError> {
+        if self.tx.is_some() {
             return Ok(LinkResponse::Accepted);
         }
         for addr in &self.addresses {
@@ -77,10 +84,13 @@ impl Connection {
             if let Ok(mut sock) = stream {
                 let message = definitions::protobuf::Link {
                     request: Some(true),
+                    name: our_name,
                     response: None,
                 };
                 let auth_message = definitions::encode(MessageType::Link, message);
-                sock.write_all(&*auth_message)
+                info!("sending link request to address {}", addr);
+                info!("{auth_message:?}");
+                sock.write_all(&auth_message)
                     .await
                     .map_err(|e| CommunicationError::WriteError(e))?;
                 let (_, _, _) = read_stream(&mut sock).await?;
@@ -130,7 +140,7 @@ impl ConnectionManager {
     }
 }
 
-async fn accept_connections() -> Result<(), CommunicationError> {
+async fn accept_connections(handle: AppHandle) -> Result<(), CommunicationError> {
     let socket = socket2::Socket::new(Domain::IPV6, Type::STREAM, None)?;
     socket.set_only_v6(false)?;
     let address = SocketAddrV6::new(Ipv6Addr::UNSPECIFIED, FDROP_PORT, 0, 0);
@@ -141,14 +151,14 @@ async fn accept_connections() -> Result<(), CommunicationError> {
     info!("created the connection acceptor");
 
     tokio::spawn(async move {
-        // TODO: look into error checking here
-        // let cm_lock = handle.state::<Mutex<ConnectionManager>>();
-        // let mut connection_manager = cm_lock.lock().unwrap();
         loop {
             let conn = listener.accept().await;
             match conn {
-                Ok((mut stream, _)) => {
-                    handle_stream(&mut stream).await;
+                Ok((stream, _)) => {
+                    info!("eshtablished stream with peer");
+                    if handle_stream(stream, handle.clone()).await.is_err() {
+                        info!("Rejecting client");
+                    }
                 }
                 Err(e) => warn!("failed to connect to peer due to {e}"),
             }
