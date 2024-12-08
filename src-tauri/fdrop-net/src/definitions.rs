@@ -7,6 +7,7 @@ use prost::Message;
 pub use protobuf::*;
 
 #[repr(u8)]
+#[derive(Debug, PartialEq)]
 pub enum MessageType {
     Link = 1 << 7,
 }
@@ -29,6 +30,6 @@ pub(crate) fn encode(mtype: MessageType, message: impl Message) -> Bytes {
     buf.put_u8(mtype as u8);
     let length = message.encoded_len() as u16;
     buf.put_u16(length);
-    message.encode_length_delimited(&mut buf).unwrap();
+    message.encode(&mut buf).unwrap();
     buf.freeze()
 }
