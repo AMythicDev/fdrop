@@ -276,8 +276,8 @@ pub mod commands {
     use super::*;
     #[tauri::command]
     pub async fn enable_networking(handle: AppHandle) -> Result<(), String> {
-        launch_discovery_service(handle).map_err(|e| NetworkError::from(e))?;
-        accept_connections()
+        launch_discovery_service(handle.clone()).map_err(|e| NetworkError::from(e))?;
+        accept_connections(handle)
             .await
             .map_err(|e| NetworkError::from(e))?;
         Ok(())
@@ -285,22 +285,18 @@ pub mod commands {
 
     #[tauri::command]
     pub async fn link_device_by_name(handle: AppHandle, name: String) -> Result<(), String> {
-        let mut actual_connection = {
+        let (mut actual_connection, our_name) = {
             let cm_lock = handle.state::<Mutex<ConnectionManager>>();
+            let user_config_lock = handle.state::<Mutex<UserConfig>>();
             let mut connection_manager = cm_lock.lock().unwrap();
-            let fake_connection = Connection {
-                name,
-                addresses: vec![],
-                stream: None,
-            };
+            let user_config = user_config_lock.lock().unwrap();
             // TODO: Handle error
-            connection_manager
-                .available_connections
-                .take(&fake_connection)
-                .unwrap()
+            let actual_connection = connection_manager.take_connection_by_name(name).unwrap();
+            (actual_connection, user_config.instance_name.clone())
         };
+
         actual_connection
-            .send_link_request()
+            .send_link_request(our_name)
             .await
             .map_err(|e| NetworkError::from(e))?;
         let cm_lock = handle.state::<Mutex<ConnectionManager>>();
