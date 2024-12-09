@@ -89,12 +89,22 @@ impl Connection {
                 };
                 let auth_message = definitions::encode(MessageType::Link, message);
                 info!("sending link request to address {}", addr);
-                info!("{auth_message:?}");
                 sock.write_all(&auth_message)
                     .await
                     .map_err(|e| CommunicationError::WriteError(e))?;
-                let (_, _) = read_stream(&mut sock).await.unwrap();
-                // self.stream = Some(sock);
+                let (mtype, mut payload) = read_stream(&mut sock).await.unwrap();
+                if MessageType::try_from(mtype).unwrap() != MessageType::Link {
+                    warn!("link request received invalid response type from peer. rejecting peer");
+                }
+                // TODO: Handle error
+                let resp = definitions::Link::decode(&mut payload).unwrap();
+                if matches!(
+                    LinkResponse::try_from(resp.response.unwrap()).unwrap(),
+                    definitions::LinkResponse::Rejected | definitions::LinkResponse::Other
+                ) {
+                    info!("the peer rejected the link request. rejecting peer");
+                    return Ok(LinkResponse::Rejected);
+                }
                 return Ok(LinkResponse::Accepted);
             }
         }
