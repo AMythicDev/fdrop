@@ -17,6 +17,9 @@
   listen<string>("device-discovered", (event) => {
     devices.add(event.payload);
   });
+  listen<string>("device-removed", (event) => {
+    devices.delete(event.payload);
+  });
 
   async function link_device(device: string) {
     await invoke("link_device_by_name", { name: device });

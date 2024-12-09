@@ -16,9 +16,9 @@ fdrop-common.workspace = true
 fdrop-config.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
+whoami.workspace = true
 tokio = { version = "1.38.0", features = ["macros"] }
 mdns-sd = "0.12.0"
-whoami.workspace = true
 socket2 = "0.5.8"
 prost = "0.13.3"
 bytes = "1.9.0"

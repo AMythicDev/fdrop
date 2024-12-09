@@ -25,6 +25,7 @@ use tracing::{info, warn};
 const MDNS_SERVICE_TYPE: &str = "_fdrop._tcp.local.";
 const FDROP_PORT: u16 = 10116;
 const DEVICE_DISCOVERED: &str = "device-discovered";
+const DEVICE_REMOVED: &str = "device-removed";
 
 #[derive(Debug)]
 pub struct Connection {
@@ -222,6 +223,14 @@ fn launch_discovery_service(handle: AppHandle) -> Result<(), DiscoveryError> {
                     handle.emit(DEVICE_DISCOVERED, &con.name)?;
                     connection_manager.available_connections.replace(con);
                     info!("found device with name: {}", info.get_fullname());
+                }
+                ServiceEvent::ServiceRemoved(_, name) => {
+                    let cm_lock = handle.state::<Mutex<ConnectionManager>>();
+                    let mut connection_manager = cm_lock.lock().unwrap();
+                    let con = Connection::create_empty_connection_with_name(name);
+                    handle.emit(DEVICE_REMOVED, &con.name)?;
+                    connection_manager.available_connections.remove(&con);
+                    info!("'{}' left", con.name);
                 }
                 ServiceEvent::SearchStopped(ss) if ss == MDNS_SERVICE_TYPE => {
                     break;
