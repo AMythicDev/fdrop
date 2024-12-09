@@ -171,7 +171,6 @@ fn launch_discovery_service(handle: AppHandle) -> Result<(), DiscoveryError> {
     let hs = whoami::fallible::hostname().map_err(|e| DiscoveryError::HostnameError(e))?;
     let local_hostname = format!("{}.local.", hs);
 
-    // TODO: look into error checking here
     let user_details_lock = handle.state::<Mutex<UserConfig>>();
     let user_details = user_details_lock.lock().unwrap();
     let cm_lock = handle.state::<Mutex<ConnectionManager>>();
@@ -207,7 +206,6 @@ fn launch_discovery_service(handle: AppHandle) -> Result<(), DiscoveryError> {
                     if info.get_hostname() == local_hostname {
                         continue;
                     }
-                    // TODO: look into error checking here
                     let cm_lock = handle.state::<Mutex<ConnectionManager>>();
                     let mut connection_manager = cm_lock.lock().unwrap();
                     let con = Connection::from(&info);
@@ -241,7 +239,7 @@ async fn read_stream(stream: &mut TcpStream) -> Result<(MessageType, Bytes), Com
         .await
         .map_err(|e| CommunicationError::ReadError(e))?;
     if payload_size > (MAX_PAYLOAD_SIZE as u16) {
-        // Return a response with invalid payload error
+        // TODO: Return a response with invalid payload error
         todo!();
     }
     let mut payload = BytesMut::zeroed((payload_size).into());
@@ -249,7 +247,6 @@ async fn read_stream(stream: &mut TcpStream) -> Result<(MessageType, Bytes), Com
         .read_exact(&mut payload)
         .await
         .map_err(|e| CommunicationError::ReadError(e))?;
-    println!("{} {} {:?}", mtype_u8, payload_size, &payload);
     Ok((mtype, payload.freeze()))
 }
 
@@ -270,21 +267,31 @@ async fn handle_stream(mut stream: TcpStream, handle: AppHandle) -> Result<(), C
             "received link request from peer '{}'. authenticating",
             message.name
         );
-        let cm_lock = handle.state::<Mutex<ConnectionManager>>();
-        let mut connection_manager = cm_lock.lock().unwrap();
-        let full_name = message.name + "." + MDNS_SERVICE_TYPE;
-        if let Some(mut conn) = connection_manager.take_connection_by_name(full_name) {
-            let (tx, rx) = bounded(100);
-            conn.tx = Some(tx);
-            connection_manager.available_connections.insert(conn);
-            drop(connection_manager);
-            // TODO: send response back
-            info!("sending control of stream to post auth handler");
-            tokio::spawn(async move { handle_postauth_stream(stream, rx, handle) });
-        } else {
-            warn!("cannot find the peer in available client list");
-            todo!();
-        }
+        let (message, rx) = {
+            let cm_lock = handle.state::<Mutex<ConnectionManager>>();
+            let mut connection_manager = cm_lock.lock().unwrap();
+            let full_name = message.name + "." + MDNS_SERVICE_TYPE;
+            if let Some(mut conn) = connection_manager.take_connection_by_name(full_name) {
+                let (tx, rx) = bounded(100);
+                conn.tx = Some(tx);
+                connection_manager.available_connections.insert(conn);
+                let our_name = connection_manager.instance_name.as_ref();
+                // TODO: Send this message after confirming from user
+                let resp = definitions::Link {
+                    request: None,
+                    name: our_name.unwrap().clone(),
+                    response: Some(LinkResponse::Accepted as i32),
+                };
+                let message = definitions::encode(MessageType::Link, resp);
+                (message, rx)
+            } else {
+                warn!("cannot find the peer in available client list");
+                todo!();
+            }
+        };
+        stream.write_all(&message).await?;
+        info!("sending control of stream to post auth handler");
+        tokio::spawn(async move { handle_postauth_stream(stream, rx, handle) });
     } else {
         warn!("received invalid protobuf payload");
         return Err(CommunicationError::DecodeError);
