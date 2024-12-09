@@ -4,6 +4,7 @@
   import { listen } from "@tauri-apps/api/event";
   import Buttons from "./Buttons.svelte";
   import Listgroup from "flowbite-svelte/Listgroup.svelte";
+  import Spinner from "flowbite-svelte/Spinner.svelte";
   import { Button } from "flowbite-svelte";
   import { SvelteSet } from "svelte/reactivity";
 
@@ -11,13 +12,14 @@
   let activePage = getActivePage();
 
   let devices = new SvelteSet<string>();
+  let devices_linking = new SvelteSet<string>();
 
   listen<string>("device-discovered", (event) => {
     devices.add(event.payload);
   });
 
-  function link_device(device: string) {
-    invoke("link_device_by_name", { name: device });
+  async function link_device(device: string) {
+    await invoke("link_device_by_name", { name: device });
   }
 </script>
 
@@ -33,9 +35,19 @@
     <div class="w-full flex justify-between text-black">
       {item}
       {#if item}
-        <Button class="bg-blue-400" onclick={() => link_device(item)}
-          >Link</Button
-        >
+        {#if devices_linking.has(item)}
+          {#await link_device(item)}
+            <Spinner class="text-green-400" />
+          {:then}
+            Done
+          {:catch}
+            Failed
+          {/await}
+        {:else}
+          <Button class="bg-blue-400" onclick={() => devices_linking.add(item)}
+            >Link</Button
+          >
+        {/if}
       {/if}
     </div>
   </Listgroup>
