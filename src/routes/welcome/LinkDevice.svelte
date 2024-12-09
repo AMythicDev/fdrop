@@ -5,6 +5,7 @@
   import Buttons from "./Buttons.svelte";
   import Listgroup from "flowbite-svelte/Listgroup.svelte";
   import Spinner from "flowbite-svelte/Spinner.svelte";
+  import Circle from "../../components/Circle.svelte";
   import { Button } from "flowbite-svelte";
   import { SvelteSet } from "svelte/reactivity";
 
@@ -22,7 +23,11 @@
   });
 
   async function link_device(device: string) {
-    await invoke("link_device_by_name", { name: device });
+    let link_resp = await invoke("link_device_by_name", { name: device });
+    devices_linking.delete(device);
+    if (link_resp == "accepted") {
+      return;
+    }
   }
 </script>
 
@@ -34,17 +39,20 @@
 >
   <span class="text-xl">Now let's get your devices paired</span>
   <span class="mx-auto text-xl">List of devices</span>
+
   <Listgroup active items={Array.from(devices)} let:item class="min-h-80">
     <div class="w-full flex justify-between text-black">
       {item}
       {#if item}
         {#if devices_linking.has(item)}
           {#await link_device(item)}
-            <Spinner class="text-green-400" />
+            <Spinner currentFill="#31c48d" currentColor="#d1d5db" />
           {:then}
-            Done
-          {:catch}
-            Failed
+            <div>
+              <Circle class="fill-green-400 h-2 w-2 inline mr-1" /><span
+                class="text-gray-400">Active</span
+              >
+            </div>
           {/await}
         {:else}
           <Button class="bg-blue-400" onclick={() => devices_linking.add(item)}

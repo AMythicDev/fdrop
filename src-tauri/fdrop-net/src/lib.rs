@@ -334,7 +334,10 @@ pub mod commands {
     }
 
     #[tauri::command]
-    pub async fn link_device_by_name(handle: AppHandle, name: String) -> Result<(), String> {
+    pub async fn link_device_by_name(
+        handle: AppHandle,
+        name: String,
+    ) -> Result<&'static str, String> {
         let (mut actual_connection, our_name) = {
             let cm_lock = handle.state::<Mutex<ConnectionManager>>();
             let user_config_lock = handle.state::<Mutex<UserConfig>>();
@@ -345,7 +348,7 @@ pub mod commands {
             (actual_connection, user_config.instance_name.clone())
         };
 
-        actual_connection
+        let res = actual_connection
             .send_link_request(our_name)
             .await
             .map_err(|e| NetworkError::from(e))?;
@@ -354,6 +357,10 @@ pub mod commands {
         connection_manager
             .available_connections
             .insert(actual_connection);
-        Ok(())
+        match res {
+            LinkResponse::Accepted => Ok("accepted"),
+            LinkResponse::Rejected => Ok("rejected"),
+            LinkResponse::Other => Ok("other"),
+        }
     }
 }
