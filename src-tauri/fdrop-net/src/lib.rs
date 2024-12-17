@@ -15,7 +15,7 @@ use std::{
     net::{IpAddr, Ipv6Addr, SocketAddr, SocketAddrV6},
     sync::Mutex,
 };
-use tauri::{AppHandle, Emitter, Manager};
+use tauri::{AppHandle, Emitter, Manager, WebviewUrl};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::{TcpListener, TcpStream},
@@ -122,6 +122,10 @@ pub struct ConnectionManager {
 impl ConnectionManager {
     pub fn new() -> Result<Mutex<Self>, NetworkError> {
         let mdns = ServiceDaemon::new().map_err(|e| DiscoveryError::ServiceDaemonError(e))?;
+        mdns.set_multicast_loop_v4(false)
+            .map_err(|e| DiscoveryError::ServiceDaemonError(e))?;
+        mdns.set_multicast_loop_v6(false)
+            .map_err(|e| DiscoveryError::ServiceDaemonError(e))?;
         Ok(Mutex::new(Self {
             mdns_daemon: mdns,
             available_connections: HashSet::new(),
@@ -296,6 +300,22 @@ async fn handle_stream(mut stream: TcpStream, handle: AppHandle) -> Result<(), C
                 connection_manager.available_connections.insert(conn);
                 let our_name = connection_manager.instance_name.as_ref();
                 // TODO: Send this message after confirming from user
+
+                let main = handle.get_webview_window("main").unwrap();
+                let respond_link_request_url = WebviewUrl::App("/confirm-link-request".into());
+                tauri::WebviewWindowBuilder::new(
+                    &handle,
+                    "respond-link-request",
+                    respond_link_request_url,
+                )
+                .title("Confirm Link Request")
+                .inner_size(500.0, 200.0)
+                .resizable(false)
+                .parent(&main)
+                .unwrap()
+                .build()
+                .unwrap();
+
                 let resp = definitions::Link {
                     request: None,
                     name: our_name.unwrap().clone(),
