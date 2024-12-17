@@ -5,8 +5,7 @@
   import CheckOutline from "flowbite-svelte-icons/CheckOutline.svelte";
   import CloseOutline from "flowbite-svelte-icons/CloseOutline.svelte";
 
-
-  let device_name = "test-device";
+  let device_name = localStorage.getItem("device-name");
 </script>
 
 <div class="flex px-3 pt-4">

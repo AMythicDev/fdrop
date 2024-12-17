@@ -15,7 +15,7 @@ use std::{
     net::{IpAddr, Ipv6Addr, SocketAddr, SocketAddrV6},
     sync::Mutex,
 };
-use tauri::{AppHandle, Emitter, Manager, WebviewUrl};
+use tauri::{webview::PageLoadEvent, AppHandle, Emitter, Listener, Manager, WebviewUrl};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::{TcpListener, TcpStream},
@@ -117,6 +117,7 @@ pub struct ConnectionManager {
     mdns_daemon: ServiceDaemon,
     available_connections: HashSet<Connection>,
     instance_name: Option<String>,
+    active_link_requests: u8,
 }
 
 impl ConnectionManager {
@@ -130,6 +131,7 @@ impl ConnectionManager {
             mdns_daemon: mdns,
             available_connections: HashSet::new(),
             instance_name: None,
+            active_link_requests: 0,
         }))
     }
 
@@ -290,44 +292,54 @@ async fn handle_stream(mut stream: TcpStream, handle: AppHandle) -> Result<(), C
             "received link request from peer '{}'. authenticating",
             message.name
         );
-        let (message, rx) = {
+        let (our_name, win_label, rx) = {
             let cm_lock = handle.state::<Mutex<ConnectionManager>>();
             let mut connection_manager = cm_lock.lock().unwrap();
-            let full_name = message.name + "." + MDNS_SERVICE_TYPE;
+            let full_name = message.name.clone() + "." + MDNS_SERVICE_TYPE;
             if let Some(mut conn) = connection_manager.take_connection_by_name(full_name) {
                 let (tx, rx) = bounded(100);
                 conn.tx = Some(tx);
                 connection_manager.available_connections.insert(conn);
-                let our_name = connection_manager.instance_name.as_ref();
-                // TODO: Send this message after confirming from user
 
-                let main = handle.get_webview_window("main").unwrap();
-                let respond_link_request_url = WebviewUrl::App("/confirm-link-request".into());
-                tauri::WebviewWindowBuilder::new(
-                    &handle,
-                    "respond-link-request",
-                    respond_link_request_url,
-                )
-                .title("Confirm Link Request")
-                .inner_size(500.0, 200.0)
-                .resizable(false)
-                .parent(&main)
-                .unwrap()
-                .build()
-                .unwrap();
+                let our_name = connection_manager.instance_name.clone().unwrap();
+                let win_label = "respond-link-request-".to_string()
+                    + &connection_manager.active_link_requests.to_string();
+                connection_manager.active_link_requests += 1;
 
-                let resp = definitions::Link {
-                    request: None,
-                    name: our_name.unwrap().clone(),
-                    response: Some(LinkResponse::Accepted as i32),
-                };
-                let message = definitions::encode(MessageType::Link, resp);
-                (message, rx)
+                (our_name, win_label, rx)
             } else {
                 warn!("cannot find the peer in available client list");
                 todo!();
             }
         };
+
+        let main = handle.get_webview_window("main").unwrap();
+
+        tauri::WebviewWindowBuilder::new(
+            &handle,
+            &win_label,
+            WebviewUrl::App("/confirm-link-request".into()),
+        )
+        .title("Confirm Link Request")
+        .inner_size(500.0, 200.0)
+        .resizable(false)
+        .initialization_script(&format!(
+            "localStorage.setItem('device-name', '{}')",
+            message.name
+        ))
+        .parent(&main)
+        .unwrap()
+        .build()
+        .unwrap();
+
+        // TODO: Get this event emit to happen after the respond window is ready
+        let resp = definitions::Link {
+            request: None,
+            name: our_name,
+            response: Some(LinkResponse::Accepted as i32),
+        };
+        let message = definitions::encode(MessageType::Link, resp);
+
         stream.write_all(&message).await?;
         info!("sending control of stream to post auth handler");
         tokio::spawn(async move { handle_postauth_stream(stream, rx, handle) });
