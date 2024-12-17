@@ -15,7 +15,7 @@ use std::{
     net::{IpAddr, Ipv6Addr, SocketAddr, SocketAddrV6},
     sync::Mutex,
 };
-use tauri::{webview::PageLoadEvent, AppHandle, Emitter, Listener, Manager, WebviewUrl};
+use tauri::{AppHandle, Emitter, Manager, WebviewUrl};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::{TcpListener, TcpStream},
@@ -171,10 +171,14 @@ async fn accept_connections(handle: AppHandle) -> Result<(), CommunicationError>
         loop {
             let conn = listener.accept().await;
             match conn {
-                Ok((stream, _)) => {
+                Ok((mut stream, _)) => {
+                    let handle2 = handle.clone();
                     info!("eshtablished stream with peer");
-                    if handle_stream(stream, handle.clone()).await.is_err() {
-                        info!("Rejecting client");
+                    if let Ok(rx) = authenticate_peer(&mut stream, &handle).await {
+                        info!("sending control of stream to post auth handler");
+                        tokio::spawn(async move { handle_postauth_stream(stream, rx, handle2) });
+                    } else {
+                        info!("rejecting peer");
                     }
                 }
                 Err(e) => warn!("failed to connect to peer due to {e}"),
@@ -275,82 +279,84 @@ async fn read_stream(stream: &mut TcpStream) -> Result<(MessageType, Bytes), Com
     Ok((mtype, payload.freeze()))
 }
 
-async fn handle_stream(mut stream: TcpStream, handle: AppHandle) -> Result<(), CommunicationError> {
-    info!("issued a handler for peer");
-    let is_linked = false;
-
+async fn authenticate_peer(
+    stream: &mut TcpStream,
+    handle: &AppHandle,
+) -> Result<Receiver<Bytes>, CommunicationError> {
+    info!("authenticating new peer");
     info!("reading inital message");
-    let (mtype, payload) = read_stream(&mut stream).await?;
-    if !is_linked && mtype != MessageType::Link {
+    let (mtype, payload) = read_stream(stream).await?;
+    if mtype != MessageType::Link {
         warn!("peer sent unexpected messages before linking");
         return Err(CommunicationError::Unauthenticated);
     }
 
     let link_req = definitions::protobuf::Link::decode(payload);
-    if let Ok(message) = link_req {
-        info!(
-            "received link request from peer '{}'. authenticating",
-            message.name
-        );
-        let (our_name, win_label, rx) = {
-            let cm_lock = handle.state::<Mutex<ConnectionManager>>();
-            let mut connection_manager = cm_lock.lock().unwrap();
-            let full_name = message.name.clone() + "." + MDNS_SERVICE_TYPE;
-            if let Some(mut conn) = connection_manager.take_connection_by_name(full_name) {
-                let (tx, rx) = bounded(100);
-                conn.tx = Some(tx);
-                connection_manager.available_connections.insert(conn);
-
-                let our_name = connection_manager.instance_name.clone().unwrap();
-                let win_label = "respond-link-request-".to_string()
-                    + &connection_manager.active_link_requests.to_string();
-                connection_manager.active_link_requests += 1;
-
-                (our_name, win_label, rx)
-            } else {
-                warn!("cannot find the peer in available client list");
-                todo!();
-            }
-        };
-
-        let main = handle.get_webview_window("main").unwrap();
-
-        tauri::WebviewWindowBuilder::new(
-            &handle,
-            &win_label,
-            WebviewUrl::App("/confirm-link-request".into()),
-        )
-        .title("Confirm Link Request")
-        .inner_size(500.0, 200.0)
-        .resizable(false)
-        .initialization_script(&format!(
-            "localStorage.setItem('device-name', '{}')",
-            message.name
-        ))
-        .parent(&main)
-        .unwrap()
-        .build()
-        .unwrap();
-
-        // TODO: Get this event emit to happen after the respond window is ready
-        let resp = definitions::Link {
-            request: None,
-            name: our_name,
-            response: Some(LinkResponse::Accepted as i32),
-        };
-        let message = definitions::encode(MessageType::Link, resp);
-
-        stream.write_all(&message).await?;
-        info!("sending control of stream to post auth handler");
-        tokio::spawn(async move { handle_postauth_stream(stream, rx, handle) });
-    } else {
+    if link_req.is_err() {
         warn!("received invalid protobuf payload");
         return Err(CommunicationError::DecodeError);
     }
-    Ok(())
+    let link_req = link_req.unwrap();
+
+    info!(
+        "received link request from peer '{}'. authenticating",
+        link_req.name
+    );
+    let (our_name, win_label, rx) = {
+        let cm_lock = handle.state::<Mutex<ConnectionManager>>();
+        let mut connection_manager = cm_lock.lock().unwrap();
+        let full_name = link_req.name.clone() + "." + MDNS_SERVICE_TYPE;
+        if let Some(mut conn) = connection_manager.take_connection_by_name(full_name) {
+            let (tx, rx) = bounded(100);
+            conn.tx = Some(tx);
+            connection_manager.available_connections.insert(conn);
+
+            let our_name = connection_manager.instance_name.clone().unwrap();
+            let win_label = "respond-link-request-".to_string()
+                + &connection_manager.active_link_requests.to_string();
+            connection_manager.active_link_requests += 1;
+
+            (our_name, win_label, rx)
+        } else {
+            warn!("cannot find the peer in available client list");
+            todo!();
+        }
+    };
+
+    // Create confirmation window
+    let main = handle.get_webview_window("main").unwrap();
+    tauri::WebviewWindowBuilder::new(
+        handle,
+        &win_label,
+        WebviewUrl::App("/confirm-link-request".into()),
+    )
+    .title("Confirm Link Request")
+    .inner_size(500.0, 200.0)
+    .resizable(false)
+    // Set the name of the requesting device in local storage of the window so that the
+    // frontend. This is a better method than relying on tauri events which can miss if
+    // they are emitted before the frontend is fully loaded.
+    .initialization_script(&format!(
+        "localStorage.setItem('device-name', '{}')",
+        link_req.name
+    ))
+    .parent(&main)
+    .unwrap()
+    .build()
+    .unwrap();
+
+    let resp = definitions::Link {
+        request: None,
+        name: our_name,
+        response: Some(LinkResponse::Accepted as i32),
+    };
+    let resp_message = definitions::encode(MessageType::Link, resp);
+    stream.write_all(&resp_message).await?;
+    return Ok(rx);
 }
 
 async fn handle_postauth_stream(stream: TcpStream, rx: Receiver<Bytes>, handle: AppHandle) {
+    info!("issued a handler for peer");
     todo!();
 }
 
