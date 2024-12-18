@@ -1,0 +1,10 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "popup-window",
+  "description": "Base capability for any popup window",
+  "windows": ["respond-link-request-*", "rejected-link-request-*"],
+  "permissions": [
+    "core:window:allow-close"
+  ]
+}
+

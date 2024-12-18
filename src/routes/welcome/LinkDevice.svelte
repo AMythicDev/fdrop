@@ -24,9 +24,10 @@
 
   async function link_device(device: string) {
     let link_resp = await invoke("link_device_by_name", { name: device });
-    devices_linking.delete(device);
     if (link_resp == "accepted") {
       return;
+    } else if (link_resp == "rejected") {
+      devices_linking.delete(device)
     }
   }
 </script>

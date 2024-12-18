@@ -105,7 +105,7 @@ impl Connection {
                     LinkResponse::try_from(resp.response.unwrap()).unwrap(),
                     definitions::LinkResponse::Rejected | definitions::LinkResponse::Other
                 ) {
-                    info!("the peer rejected the link request. rejecting peer");
+                    info!("the peer rejected the link request");
                     return Ok(LinkResponse::Rejected);
                 }
                 info!("successfully linked with peer");
@@ -182,7 +182,7 @@ async fn accept_connections(handle: AppHandle) -> Result<(), CommunicationError>
                 Ok((mut stream, _)) => {
                     let handle2 = handle.clone();
                     info!("eshtablished stream with peer");
-                    tokio::spawn(async move {
+                    tauri::async_runtime::spawn(async move {
                         let rx = authenticate_peer(&mut stream, &handle2).await;
                         if matches!(rx, Ok(Some(_))) {
                             info!("sending control of stream to post auth handler");
@@ -190,7 +190,9 @@ async fn accept_connections(handle: AppHandle) -> Result<(), CommunicationError>
                         } else {
                             info!("rejecting peer");
                         }
-                    });
+                    })
+                    .await
+                    .unwrap();
                 }
                 Err(e) => warn!("failed to connect to peer due to {e}"),
             }
@@ -323,7 +325,7 @@ async fn authenticate_peer(
             + &connection_manager.active_link_requests.to_string();
         connection_manager.active_link_requests += 1;
 
-        if connection_manager.connection_exists(full_name.clone()) {
+        if !connection_manager.connection_exists(full_name.clone()) {
             return Err(CommunicationError::PeerNotFound);
         }
         (our_name, win_label)
@@ -430,15 +432,44 @@ pub mod commands {
             .send_link_request(our_name)
             .await
             .map_err(|e| NetworkError::from(e))?;
+        let res = match res {
+            LinkResponse::Accepted => Ok("accepted"),
+            LinkResponse::Rejected => {
+                let cm_lock = handle.state::<Mutex<ConnectionManager>>();
+                let mut connection_manager = cm_lock.lock().unwrap();
+                let win_label = "rejected-link-request-".to_string()
+                    + &connection_manager.active_link_requests.to_string();
+                connection_manager.active_link_requests += 1;
+
+                let main = handle.get_webview_window("main").unwrap();
+                tauri::WebviewWindowBuilder::new(
+                    &handle,
+                    win_label,
+                    WebviewUrl::App("/rejected-link-request".into()),
+                )
+                .title("Link Request Rejected")
+                .inner_size(500.0, 150.0)
+                .resizable(false)
+                // Set the name of the requesting device in local storage of the window so that the
+                // frontend. This is a better method than relying on tauri events which can miss if
+                // they are emitted before the frontend is fully loaded.
+                .initialization_script(&format!(
+                    "localStorage.setItem('device-name', '{}')",
+                    actual_connection.name
+                ))
+                .parent(&main)
+                .unwrap()
+                .build()
+                .unwrap();
+                Ok("rejected")
+            }
+            LinkResponse::Other => Ok("other"),
+        };
         let cm_lock = handle.state::<Mutex<ConnectionManager>>();
         let mut connection_manager = cm_lock.lock().unwrap();
         connection_manager
             .available_connections
             .insert(actual_connection);
-        match res {
-            LinkResponse::Accepted => Ok("accepted"),
-            LinkResponse::Rejected => Ok("rejected"),
-            LinkResponse::Other => Ok("other"),
-        }
+        res
     }
 }

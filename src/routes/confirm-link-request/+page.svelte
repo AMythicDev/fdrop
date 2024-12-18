@@ -4,8 +4,8 @@
   import Link from "../../components/link.svelte";
   import CheckOutline from "flowbite-svelte-icons/CheckOutline.svelte";
   import CloseOutline from "flowbite-svelte-icons/CloseOutline.svelte";
-
   import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
+
   const webview = getCurrentWebviewWindow();
   let device_name = localStorage.getItem("device-name");
 
