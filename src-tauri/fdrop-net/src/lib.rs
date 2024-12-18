@@ -15,7 +15,7 @@ use std::{
     net::{IpAddr, Ipv6Addr, SocketAddr, SocketAddrV6},
     sync::Mutex,
 };
-use tauri::{AppHandle, Emitter, Manager, WebviewUrl};
+use tauri::{AppHandle, Emitter, Listener, Manager, WebviewUrl};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::{TcpListener, TcpStream},
@@ -73,6 +73,7 @@ impl Connection {
         }
     }
 
+    #[tracing::instrument]
     async fn send_link_request(
         &mut self,
         our_name: String,
@@ -97,8 +98,8 @@ impl Connection {
                 if MessageType::try_from(mtype).unwrap() != MessageType::Link {
                     warn!("link request received invalid response type from peer. rejecting peer");
                 }
-                // TODO: Handle error
-                let resp = definitions::Link::decode(&mut payload).unwrap();
+                let resp = definitions::Link::decode(&mut payload)
+                    .map_err(|_| CommunicationError::DecodeError)?;
                 if matches!(
                     LinkResponse::try_from(resp.response.unwrap()).unwrap(),
                     definitions::LinkResponse::Rejected | definitions::LinkResponse::Other
@@ -106,6 +107,7 @@ impl Connection {
                     info!("the peer rejected the link request. rejecting peer");
                     return Ok(LinkResponse::Rejected);
                 }
+                info!("successfully linked with peer");
                 return Ok(LinkResponse::Accepted);
             }
         }
@@ -323,11 +325,30 @@ async fn authenticate_peer(
         }
     };
 
+    let resp = confirm_link_request(handle, &link_req.name, &win_label).await;
+    let resp = definitions::Link {
+        request: None,
+        name: our_name,
+        response: Some(resp as i32),
+    };
+
+    let resp_message = definitions::encode(MessageType::Link, resp);
+    stream.write_all(&resp_message).await.unwrap();
+    return Ok(rx);
+}
+
+#[tracing::instrument(skip(handle))]
+async fn confirm_link_request(
+    handle: &AppHandle,
+    their_name: &str,
+    win_label: &str,
+) -> LinkResponse {
+    info!("creating confirmation window for peer");
     // Create confirmation window
     let main = handle.get_webview_window("main").unwrap();
-    tauri::WebviewWindowBuilder::new(
+    let win = tauri::WebviewWindowBuilder::new(
         handle,
-        &win_label,
+        win_label,
         WebviewUrl::App("/confirm-link-request".into()),
     )
     .title("Confirm Link Request")
@@ -338,21 +359,22 @@ async fn authenticate_peer(
     // they are emitted before the frontend is fully loaded.
     .initialization_script(&format!(
         "localStorage.setItem('device-name', '{}')",
-        link_req.name
+        their_name
     ))
     .parent(&main)
     .unwrap()
     .build()
     .unwrap();
 
-    let resp = definitions::Link {
-        request: None,
-        name: our_name,
-        response: Some(LinkResponse::Accepted as i32),
-    };
-    let resp_message = definitions::encode(MessageType::Link, resp);
-    stream.write_all(&resp_message).await?;
-    return Ok(rx);
+    let (etx, erx) = flume::bounded(1);
+    win.listen("link-response", move |event| match event.payload() {
+        "\"accepted\"" => etx.send(LinkResponse::Accepted).unwrap(),
+        "\"rejected\"" => etx.send(LinkResponse::Rejected).unwrap(),
+        _ => etx.send(LinkResponse::Other).unwrap(),
+    });
+    let resp = erx.recv_async().await.unwrap();
+    info!("user selected: {:?}", resp);
+    resp
 }
 
 async fn handle_postauth_stream(stream: TcpStream, rx: Receiver<Bytes>, handle: AppHandle) {
@@ -381,7 +403,6 @@ pub mod commands {
             let user_config_lock = handle.state::<Mutex<UserConfig>>();
             let mut connection_manager = cm_lock.lock().unwrap();
             let user_config = user_config_lock.lock().unwrap();
-            // TODO: Handle error
             let actual_connection = connection_manager.take_connection_by_name(name).unwrap();
             (actual_connection, user_config.instance_name.clone())
         };

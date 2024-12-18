@@ -5,7 +5,16 @@
   import CheckOutline from "flowbite-svelte-icons/CheckOutline.svelte";
   import CloseOutline from "flowbite-svelte-icons/CloseOutline.svelte";
 
+  import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
+  const webview = getCurrentWebviewWindow();
   let device_name = localStorage.getItem("device-name");
+
+  function accept() {
+    webview.emitTo(webview.label, "link-response", "accepted");
+  }
+  function reject() {
+    webview.emitTo(webview.label, "link-response", "rejected");
+  }
 </script>
 
 <div class="flex px-3 pt-4">
@@ -20,8 +29,8 @@
       this device
     </p>
     <ButtonGroup class="shadow-none flex gap-1 justify-end">
-      <Button class="!bg-red-400 text-white"><CloseOutline />Reject</Button>
-      <Button class="!bg-green-400 text-white"><CheckOutline /> Accept</Button>
+      <Button class="!bg-red-400 text-white" onclick={reject}><CloseOutline />Reject</Button>
+      <Button class="!bg-green-400 text-white" onclick={accept}><CheckOutline /> Accept</Button>
     </ButtonGroup>
   </div>
 </div>
