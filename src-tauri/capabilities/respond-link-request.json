@@ -4,7 +4,8 @@
   "description": "Capability for confirm link request window",
   "windows": ["respond-link-request-*"],
   "permissions": [
-    "core:event:allow-emit-to"
+    "core:event:allow-emit-to",
+    "core:window:allow-close"
   ]
 }
 

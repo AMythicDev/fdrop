@@ -26,6 +26,7 @@ const MDNS_SERVICE_TYPE: &str = "_fdrop._tcp.local.";
 const FDROP_PORT: u16 = 10116;
 const DEVICE_DISCOVERED: &str = "device-discovered";
 const DEVICE_REMOVED: &str = "device-removed";
+const LINK_RESPONSE: &str = "link-response";
 
 #[derive(Debug)]
 pub struct Connection {
@@ -157,6 +158,11 @@ impl ConnectionManager {
         let fake_connection = Connection::create_empty_connection_with_name(name);
         self.available_connections.take(&fake_connection)
     }
+
+    pub(crate) fn connection_exists(&mut self, name: String) -> bool {
+        let fake_connection = Connection::create_empty_connection_with_name(name);
+        self.available_connections.contains(&fake_connection)
+    }
 }
 
 async fn accept_connections(handle: AppHandle) -> Result<(), CommunicationError> {
@@ -176,12 +182,15 @@ async fn accept_connections(handle: AppHandle) -> Result<(), CommunicationError>
                 Ok((mut stream, _)) => {
                     let handle2 = handle.clone();
                     info!("eshtablished stream with peer");
-                    if let Ok(rx) = authenticate_peer(&mut stream, &handle).await {
-                        info!("sending control of stream to post auth handler");
-                        tokio::spawn(async move { handle_postauth_stream(stream, rx, handle2) });
-                    } else {
-                        info!("rejecting peer");
-                    }
+                    tokio::spawn(async move {
+                        let rx = authenticate_peer(&mut stream, &handle2).await;
+                        if matches!(rx, Ok(Some(_))) {
+                            info!("sending control of stream to post auth handler");
+                            handle_postauth_stream(stream, rx.unwrap().unwrap(), handle2).await;
+                        } else {
+                            info!("rejecting peer");
+                        }
+                    });
                 }
                 Err(e) => warn!("failed to connect to peer due to {e}"),
             }
@@ -284,7 +293,7 @@ async fn read_stream(stream: &mut TcpStream) -> Result<(MessageType, Bytes), Com
 async fn authenticate_peer(
     stream: &mut TcpStream,
     handle: &AppHandle,
-) -> Result<Receiver<Bytes>, CommunicationError> {
+) -> Result<Option<Receiver<Bytes>>, CommunicationError> {
     info!("authenticating new peer");
     info!("reading inital message");
     let (mtype, payload) = read_stream(stream).await?;
@@ -300,32 +309,42 @@ async fn authenticate_peer(
     }
     let link_req = link_req.unwrap();
 
+    let full_name = link_req.name.clone() + "." + MDNS_SERVICE_TYPE;
     info!(
         "received link request from peer '{}'. authenticating",
         link_req.name
     );
-    let (our_name, win_label, rx) = {
+
+    let (our_name, win_label) = {
         let cm_lock = handle.state::<Mutex<ConnectionManager>>();
         let mut connection_manager = cm_lock.lock().unwrap();
-        let full_name = link_req.name.clone() + "." + MDNS_SERVICE_TYPE;
-        if let Some(mut conn) = connection_manager.take_connection_by_name(full_name) {
-            let (tx, rx) = bounded(100);
-            conn.tx = Some(tx);
-            connection_manager.available_connections.insert(conn);
+        let our_name = connection_manager.instance_name.clone().unwrap();
+        let win_label = "respond-link-request-".to_string()
+            + &connection_manager.active_link_requests.to_string();
+        connection_manager.active_link_requests += 1;
 
-            let our_name = connection_manager.instance_name.clone().unwrap();
-            let win_label = "respond-link-request-".to_string()
-                + &connection_manager.active_link_requests.to_string();
-            connection_manager.active_link_requests += 1;
-
-            (our_name, win_label, rx)
-        } else {
-            warn!("cannot find the peer in available client list");
-            todo!();
+        if connection_manager.connection_exists(full_name.clone()) {
+            return Err(CommunicationError::PeerNotFound);
         }
+        (our_name, win_label)
     };
 
     let resp = confirm_link_request(handle, &link_req.name, &win_label).await;
+
+    let rx = if resp == LinkResponse::Accepted {
+        let cm_lock = handle.state::<Mutex<ConnectionManager>>();
+        let mut connection_manager = cm_lock.lock().unwrap();
+        let mut conn = connection_manager
+            .take_connection_by_name(full_name)
+            .unwrap();
+        let (tx, rx) = bounded(100);
+        conn.tx = Some(tx);
+        connection_manager.available_connections.insert(conn);
+        Ok(Some(rx))
+    } else {
+        Ok(None)
+    };
+
     let resp = definitions::Link {
         request: None,
         name: our_name,
@@ -334,7 +353,7 @@ async fn authenticate_peer(
 
     let resp_message = definitions::encode(MessageType::Link, resp);
     stream.write_all(&resp_message).await.unwrap();
-    return Ok(rx);
+    rx
 }
 
 #[tracing::instrument(skip(handle))]
@@ -367,7 +386,7 @@ async fn confirm_link_request(
     .unwrap();
 
     let (etx, erx) = flume::bounded(1);
-    win.listen("link-response", move |event| match event.payload() {
+    win.listen(LINK_RESPONSE, move |event| match event.payload() {
         "\"accepted\"" => etx.send(LinkResponse::Accepted).unwrap(),
         "\"rejected\"" => etx.send(LinkResponse::Rejected).unwrap(),
         _ => etx.send(LinkResponse::Other).unwrap(),

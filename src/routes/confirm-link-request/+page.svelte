@@ -11,9 +11,11 @@
 
   function accept() {
     webview.emitTo(webview.label, "link-response", "accepted");
+    webview.close()
   }
   function reject() {
     webview.emitTo(webview.label, "link-response", "rejected");
+    webview.close()
   }
 </script>
 

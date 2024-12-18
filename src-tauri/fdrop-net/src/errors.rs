@@ -19,6 +19,8 @@ pub enum CommunicationError {
     NoReachableAddress,
     #[error("peer sent unexpected messages before linking")]
     Unauthenticated,
+    #[error("peer not found by discovery service")]
+    PeerNotFound,
     #[error("IO error")]
     Io(#[from] std::io::Error),
 }
