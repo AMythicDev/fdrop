@@ -1,7 +1,7 @@
 use fdrop_net::ConnectionManager;
 use std::str::FromStr;
 use std::sync::Mutex;
-use tauri::{Manager, WindowEvent};
+use tauri::{AppHandle, Manager, WebviewUrl, WindowEvent};
 use tracing::info;
 use tracing_subscriber::{filter::Directive, EnvFilter};
 
@@ -28,6 +28,7 @@ pub fn run() {
             fdrop_config::commands::check_first_launch,
             fdrop_config::commands::initial_setup,
             fdrop_config::commands::generate_keys,
+            open_link_device_window,
             fdrop_net::commands::enable_networking,
             fdrop_net::commands::link_device_by_name,
         ])
@@ -53,4 +54,21 @@ pub fn run() {
         })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+#[tauri::command]
+fn open_link_device_window(handle: AppHandle) {
+    let main = handle.get_webview_window("main").unwrap();
+    tauri::WebviewWindowBuilder::new(
+        &handle,
+        "link-device",
+        WebviewUrl::App("/link-device".into()),
+    )
+    .title("Link Devices")
+    .inner_size(600.0, 450.0)
+    .resizable(false)
+    .parent(&main)
+    .unwrap()
+    .build()
+    .unwrap();
 }
