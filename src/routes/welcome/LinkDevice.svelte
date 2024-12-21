@@ -13,7 +13,8 @@
   let activePage = getActivePage();
 
   let devices = new SvelteSet<string>();
-  let devices_linking = new SvelteSet<string>();
+  let link_devices = new SvelteSet<string>();
+  let any_device_linked = $state(false);
 
   listen<string>("device-discovered", (event) => {
     devices.add(event.payload);
@@ -25,9 +26,10 @@
   async function link_device(device: string) {
     let link_resp = await invoke("link_device_by_name", { name: device });
     if (link_resp == "accepted") {
+      any_device_linked = true;
       return;
     } else if (link_resp == "rejected") {
-      devices_linking.delete(device)
+      link_devices.delete(device);
     }
   }
 </script>
@@ -45,7 +47,7 @@
     <div class="w-full flex justify-between text-black">
       {item}
       {#if item}
-        {#if devices_linking.has(item)}
+        {#if link_devices.has(item)}
           {#await link_device(item)}
             <Spinner currentFill="#31c48d" currentColor="#d1d5db" />
           {:then}
@@ -56,12 +58,16 @@
             </div>
           {/await}
         {:else}
-          <Button class="bg-blue-400" onclick={() => devices_linking.add(item)}
+          <Button class="bg-blue-400" onclick={() => link_devices.add(item)}
             >Link</Button
           >
         {/if}
       {/if}
     </div>
   </Listgroup>
-  <Buttons continueButtonText="Continue Without Linking" />
+  {#if any_device_linked}
+    <Buttons continueButtonText="Continue" />
+  {:else}
+    <Buttons continueButtonText="Continue Without Linking" />
+  {/if}
 </div>
