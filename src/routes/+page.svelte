@@ -26,10 +26,10 @@
 </script>
 
 <div class="grid grid-cols-[1fr,2fr] h-[100vh]">
-  <div class="shadow-sm shadow-gray-700 p-2 flex flex-col justify-between">
+  <div class="shadow-sm shadow-gray-700 flex flex-col justify-between">
     {#each linked_devices as device}
       <ul>
-        <li>{device.name}</li>
+        <li class="border-b-2 border-gray-100 px-2 py-1">{device.name}</li>
       </ul>
     {:else}
       <div class="flex flex-col items-center justify-center h-full gap-2">
@@ -40,7 +40,7 @@
       </div>
     {/each}
     <Button
-      class="!bg-blue-400"
+      class="!bg-blue-400 m-2"
       onclick={() => invoke("open_link_device_window", {})}>Link Device</Button
     >
   </div>

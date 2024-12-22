@@ -14,7 +14,8 @@ export let available_devices = new SvelteMap<string, ConnectionInfo>();
  */
 export function listen_device_events() {
   listen<ConnectionInfo>("device-discovered", (event) => {
-    available_devices.set(event.payload.name, event.payload);
+    const device = $state(event.payload);
+    available_devices.set(event.payload.name, device);
   });
   listen<ConnectionInfo>("device-removed", (event) => {
     available_devices.delete(event.payload.name);
