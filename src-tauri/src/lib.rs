@@ -29,6 +29,7 @@ pub fn run() {
             fdrop_config::commands::initial_setup,
             fdrop_config::commands::generate_keys,
             open_link_device_window,
+            get_available_connections,
             fdrop_net::commands::enable_networking,
             fdrop_net::commands::link_device_by_name,
         ])
@@ -54,6 +55,17 @@ pub fn run() {
         })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+#[tauri::command]
+fn get_available_connections(handle: AppHandle) -> Vec<String> {
+    let cm_lock = handle.state::<Mutex<ConnectionManager>>();
+    let connection_manager = cm_lock.lock().unwrap();
+    connection_manager
+        .get_connectionss()
+        .into_iter()
+        .map(|c| c.name.clone())
+        .collect()
 }
 
 #[tauri::command]

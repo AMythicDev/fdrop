@@ -14,6 +14,10 @@
   import KeyGeneration from "./KeyGeneration.svelte";
   import LinkDevice from "./LinkDevice.svelte";
   import Done from "./Done.svelte";
+  import {
+    enable_networking,
+    listen_device_events,
+  } from "$lib/networking.svelte";
 
   createActivePage();
 
@@ -24,7 +28,8 @@
   getActivePage().subscribe((value: any) => {
     transitionPage(value, activePage!, pages);
     if (value == 2) {
-      invoke("enable_networking");
+      listen_device_events();
+      enable_networking();
     }
     activePage = value;
   });

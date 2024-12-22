@@ -30,7 +30,7 @@ const LINK_RESPONSE: &str = "link-response";
 
 #[derive(Debug)]
 pub struct Connection {
-    name: String,
+    pub name: String,
     addresses: Vec<IpAddr>,
     tx: Option<Sender<Bytes>>,
     // rx: Option<Receiver<Bytes>>,
@@ -152,6 +152,10 @@ impl ConnectionManager {
             .map_err(|e| DiscoveryError::ShutdownError(e))?;
         info!("closed mdns service daemon");
         Ok(())
+    }
+
+    pub fn get_connectionss(&self) -> &HashSet<Connection> {
+        &self.available_connections
     }
 
     pub(crate) fn take_connection_by_name(&mut self, name: String) -> Option<Connection> {

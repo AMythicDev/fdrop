@@ -3,19 +3,11 @@
   import { SvelteSet } from "svelte/reactivity";
   import Spinner from "flowbite-svelte/Spinner.svelte";
   import Listgroup from "flowbite-svelte/Listgroup.svelte";
-  import { listen } from "@tauri-apps/api/event";
   import { invoke } from "@tauri-apps/api/core";
   import Circle from "./Circle.svelte";
+  import { available_devices } from "$lib/networking.svelte";
 
-  let devices = new SvelteSet<string>();
   let link_devices = new SvelteSet<string>();
-
-  listen<string>("device-discovered", (event) => {
-    devices.add(event.payload);
-  });
-  listen<string>("device-removed", (event) => {
-    devices.delete(event.payload);
-  });
 
   async function link_device(device: string) {
     let link_resp = await invoke("link_device_by_name", { name: device });
@@ -31,7 +23,12 @@
 
 <span class="mx-auto text-xl">List of devices</span>
 
-<Listgroup active items={Array.from(devices)} let:item class="min-h-80">
+<Listgroup
+  active
+  items={Array.from(available_devices)}
+  let:item
+  class="min-h-80"
+>
   <div class="w-full flex justify-between text-black">
     {item}
     {#if item}
