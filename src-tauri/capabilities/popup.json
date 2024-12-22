@@ -2,9 +2,10 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "popup-window",
   "description": "Base capability for any popup window",
-  "windows": ["respond-link-request-*", "rejected-link-request-*"],
+  "windows": ["respond-link-request-*", "rejected-link-request-*", "link-device"],
   "permissions": [
-    "core:window:allow-close"
+    "core:window:allow-close",
+    "core:event:allow-emit-to"
   ]
 }
 

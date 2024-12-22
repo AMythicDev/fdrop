@@ -27,18 +27,26 @@ const FDROP_PORT: u16 = 10116;
 const DEVICE_DISCOVERED: &str = "device-discovered";
 const DEVICE_REMOVED: &str = "device-removed";
 const LINK_RESPONSE: &str = "link-response";
+#[allow(dead_code)]
+const DEVICE_LINKED: &str = "device-linked";
 
 #[derive(Debug)]
 pub struct Connection {
-    pub name: String,
+    pub info: ConnectionInfo,
     addresses: Vec<IpAddr>,
     tx: Option<Sender<Bytes>>,
     // rx: Option<Receiver<Bytes>>,
 }
 
+#[derive(Debug, serde::Serialize, Clone)]
+pub struct ConnectionInfo {
+    pub name: String,
+    pub linked: bool,
+}
+
 impl PartialEq for Connection {
     fn eq(&self, other: &Self) -> bool {
-        self.name == other.name
+        self.info.name == other.info.name
     }
 }
 
@@ -47,16 +55,20 @@ impl Eq for Connection {}
 impl Hash for Connection {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         // HACK: Hash strings until Rust feature `hasher_prefixfree_extras` isn't implemented
-        state.write(self.name.as_bytes());
+        state.write(self.info.name.as_bytes());
         state.write_u8(0xff);
     }
 }
 
 impl From<&ServiceInfo> for Connection {
     fn from(value: &ServiceInfo) -> Self {
-        Connection {
+        let info = ConnectionInfo {
             // TODO: Get proper name
             name: value.get_fullname().to_string(),
+            linked: false,
+        };
+        Connection {
+            info,
             addresses: value.get_addresses().iter().map(|i| *i).collect(),
             tx: None,
             // rx: None,
@@ -66,8 +78,14 @@ impl From<&ServiceInfo> for Connection {
 
 impl Connection {
     pub(crate) fn create_empty_connection_with_name(name: String) -> Self {
-        Self {
+        let info = ConnectionInfo {
+            // TODO: Get proper name
             name,
+            linked: false,
+        };
+
+        Self {
+            info,
             addresses: vec![],
             tx: None,
             // rx: None,
@@ -154,8 +172,8 @@ impl ConnectionManager {
         Ok(())
     }
 
-    pub fn get_connectionss(&self) -> &HashSet<Connection> {
-        &self.available_connections
+    pub fn get_connectionss<'a>(&'a self) -> impl Iterator<Item = &'a ConnectionInfo> {
+        self.available_connections.iter().map(|c| &c.info)
     }
 
     pub(crate) fn take_connection_by_name(&mut self, name: String) -> Option<Connection> {
@@ -247,7 +265,7 @@ fn launch_discovery_service(handle: AppHandle) -> Result<(), DiscoveryError> {
                     let cm_lock = handle.state::<Mutex<ConnectionManager>>();
                     let mut connection_manager = cm_lock.lock().unwrap();
                     let con = Connection::from(&info);
-                    handle.emit(DEVICE_DISCOVERED, &con.name)?;
+                    handle.emit(DEVICE_DISCOVERED, &con.info)?;
                     connection_manager.available_connections.replace(con);
                     info!("found device with name: {}", info.get_fullname());
                 }
@@ -255,9 +273,9 @@ fn launch_discovery_service(handle: AppHandle) -> Result<(), DiscoveryError> {
                     let cm_lock = handle.state::<Mutex<ConnectionManager>>();
                     let mut connection_manager = cm_lock.lock().unwrap();
                     let con = Connection::create_empty_connection_with_name(name);
-                    handle.emit(DEVICE_REMOVED, &con.name)?;
+                    handle.emit(DEVICE_REMOVED, &con.info)?;
                     connection_manager.available_connections.remove(&con);
-                    info!("'{}' left", con.name);
+                    info!("'{}' left", con.info.name);
                 }
                 ServiceEvent::SearchStopped(ss) if ss == MDNS_SERVICE_TYPE => {
                     break;
@@ -402,7 +420,7 @@ async fn confirm_link_request(
     resp
 }
 
-async fn handle_postauth_stream(stream: TcpStream, rx: Receiver<Bytes>, handle: AppHandle) {
+async fn handle_postauth_stream(_stream: TcpStream, _rx: Receiver<Bytes>, _handle: AppHandle) {
     info!("issued a handler for peer");
     todo!();
 }
@@ -459,7 +477,7 @@ pub mod commands {
                 // they are emitted before the frontend is fully loaded.
                 .initialization_script(&format!(
                     "localStorage.setItem('device-name', '{}')",
-                    actual_connection.name
+                    actual_connection.info.name
                 ))
                 .parent(&main)
                 .unwrap()

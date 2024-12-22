@@ -1180,6 +1180,7 @@ dependencies = [
  "mdns-sd",
  "prost",
  "prost-build",
+ "serde",
  "socket2",
  "tauri",
  "thiserror 1.0.69",

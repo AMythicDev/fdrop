@@ -6,17 +6,19 @@
   import { invoke } from "@tauri-apps/api/core";
   import Circle from "./Circle.svelte";
   import { available_devices } from "$lib/networking.svelte";
+  import { emitTo } from "@tauri-apps/api/event";
 
   let link_devices = new SvelteSet<string>();
 
-  async function link_device(device: string) {
-    let link_resp = await invoke("link_device_by_name", { name: device });
+  async function link_device(name: string) {
+    let link_resp = await invoke("link_device_by_name", { name: name });
     if (link_resp == "accepted") {
+      await emitTo("main", "device-linked", name);
       // TODO: handle this
       // any_device_linked = true;
       return;
     } else if (link_resp == "rejected") {
-      link_devices.delete(device);
+      link_devices.delete(name);
     }
   }
 </script>
@@ -25,15 +27,15 @@
 
 <Listgroup
   active
-  items={Array.from(available_devices)}
+  items={Array.from(available_devices.values())}
   let:item
   class="min-h-80"
 >
   <div class="w-full flex justify-between text-black">
-    {item}
     {#if item}
-      {#if link_devices.has(item)}
-        {#await link_device(item)}
+      {item.name}
+      {#if link_devices.has(item.name)}
+        {#await link_device(item.name)}
           <Spinner currentFill="#31c48d" currentColor="#d1d5db" />
         {:then}
           <div>
@@ -43,7 +45,7 @@
           </div>
         {/await}
       {:else}
-        <Button class="bg-blue-400" onclick={() => link_devices.add(item)}
+        <Button class="bg-blue-400" onclick={() => link_devices.add(item.name)}
           >Link</Button
         >
       {/if}

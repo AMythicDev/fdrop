@@ -1,4 +1,4 @@
-use fdrop_net::ConnectionManager;
+use fdrop_net::{ConnectionInfo, ConnectionManager};
 use std::str::FromStr;
 use std::sync::Mutex;
 use tauri::{AppHandle, Manager, WebviewUrl, WindowEvent};
@@ -58,14 +58,15 @@ pub fn run() {
 }
 
 #[tauri::command]
-fn get_available_connections(handle: AppHandle) -> Vec<String> {
+fn get_available_connections(handle: AppHandle) -> String {
     let cm_lock = handle.state::<Mutex<ConnectionManager>>();
     let connection_manager = cm_lock.lock().unwrap();
-    connection_manager
-        .get_connectionss()
-        .into_iter()
-        .map(|c| c.name.clone())
-        .collect()
+    serde_json::to_string(
+        &connection_manager
+            .get_connectionss()
+            .collect::<Vec<&ConnectionInfo>>(),
+    )
+    .unwrap()
 }
 
 #[tauri::command]
