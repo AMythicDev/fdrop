@@ -20,7 +20,7 @@ use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::{TcpListener, TcpStream},
 };
-use tracing::{info, warn};
+use tracing::{error, info, warn};
 
 const MDNS_SERVICE_TYPE: &str = "_fdrop._tcp.local.";
 const FDROP_PORT: u16 = 10116;
@@ -196,7 +196,7 @@ async fn accept_connections(handle: AppHandle) -> Result<(), CommunicationError>
     let listener: TcpListener = TcpListener::from_std(std_listener)?;
     info!("created the connection acceptor");
 
-    tokio::spawn(async move {
+    tauri::async_runtime::spawn(async move {
         loop {
             let conn = listener.accept().await;
             match conn {
@@ -206,6 +206,9 @@ async fn accept_connections(handle: AppHandle) -> Result<(), CommunicationError>
                     tauri::async_runtime::spawn(async move {
                         let ret = authenticate_peer(&mut stream, &handle2).await;
                         if let Ok(Some((rx, full_name))) = ret {
+                            // HACK: Sleep for some time prevents the subsequent emit call to not hang and crash the
+                            // entire app
+                            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
                             handle2.emit(DEVICE_LINKED, full_name).unwrap();
                             info!("sending control of stream to post auth handler");
                             handle_postauth_stream(stream, rx, handle2).await;

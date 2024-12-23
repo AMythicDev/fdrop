@@ -6,9 +6,13 @@
   import { invoke } from "@tauri-apps/api/core";
   import Circle from "./Circle.svelte";
   import { available_devices, realname } from "$lib/networking.svelte";
-  import { emitTo } from "@tauri-apps/api/event";
+  import { emitTo, listen } from "@tauri-apps/api/event";
 
   let link_devices = new SvelteSet<string>();
+
+  listen<string>("device-linked", (event) => {
+    link_devices.add(event.payload);
+  });
 
   async function link_device(name: string) {
     let link_resp = await invoke("link_device_by_name", { name: name });
