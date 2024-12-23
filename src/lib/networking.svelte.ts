@@ -7,6 +7,12 @@ export type ConnectionInfo = {
   linked: boolean
 }
 
+export function realname(conn: ConnectionInfo): string {
+  let name_end = conn.name.indexOf("._fdrop");
+  if (name_end == -1) name_end = conn.name.length;
+  return conn.name.slice(0, name_end);
+}
+
 export let available_devices = new SvelteMap<string, ConnectionInfo>();
 
 /* Attach listenerer for device events

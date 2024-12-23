@@ -5,7 +5,7 @@
   import Listgroup from "flowbite-svelte/Listgroup.svelte";
   import { invoke } from "@tauri-apps/api/core";
   import Circle from "./Circle.svelte";
-  import { available_devices } from "$lib/networking.svelte";
+  import { available_devices, realname } from "$lib/networking.svelte";
   import { emitTo } from "@tauri-apps/api/event";
 
   let link_devices = new SvelteSet<string>();
@@ -33,7 +33,7 @@
 >
   <div class="w-full flex justify-between text-black">
     {#if item}
-      {item.name}
+      {realname(item)}
       {#if link_devices.has(item.name)}
         {#await link_device(item.name)}
           <Spinner currentFill="#31c48d" currentColor="#d1d5db" />

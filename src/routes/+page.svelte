@@ -3,6 +3,7 @@
   import Button from "flowbite-svelte/Button.svelte";
   import {
     available_devices,
+    realname,
     type ConnectionInfo,
   } from "$lib/networking.svelte";
   import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
@@ -12,7 +13,7 @@
   let resizer: HTMLElement | undefined = $state();
   onMount(() => {
     resizer!.classList.add("w-1", "bg-gray-200");
-  })
+  });
 
   const webview = getCurrentWebviewWindow();
   webview.listen<string>("device-linked", (event) => {
