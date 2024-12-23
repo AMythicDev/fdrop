@@ -5,7 +5,8 @@
   "windows": ["respond-link-request-*", "rejected-link-request-*", "link-device"],
   "permissions": [
     "core:window:allow-close",
-    "core:event:allow-emit-to"
+    "core:event:allow-emit-to",
+    "core:event:allow-listen"
   ]
 }
 
