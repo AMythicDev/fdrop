@@ -26,6 +26,11 @@ export function listen_device_events() {
   listen<ConnectionInfo>("device-removed", (event) => {
     available_devices.delete(event.payload.name);
   });
+  listen<string>("device-linked", (event) => {
+    let device = available_devices.get(event.payload);
+    device!.linked = true;
+    available_devices.set(event.payload, device!);
+  });
 }
 
 export function enable_networking() {

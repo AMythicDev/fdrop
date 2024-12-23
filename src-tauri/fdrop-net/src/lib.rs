@@ -27,7 +27,6 @@ const FDROP_PORT: u16 = 10116;
 const DEVICE_DISCOVERED: &str = "device-discovered";
 const DEVICE_REMOVED: &str = "device-removed";
 const LINK_RESPONSE: &str = "link-response";
-#[allow(dead_code)]
 const DEVICE_LINKED: &str = "device-linked";
 
 #[derive(Debug)]
@@ -205,10 +204,11 @@ async fn accept_connections(handle: AppHandle) -> Result<(), CommunicationError>
                     let handle2 = handle.clone();
                     info!("eshtablished stream with peer");
                     tauri::async_runtime::spawn(async move {
-                        let rx = authenticate_peer(&mut stream, &handle2).await;
-                        if matches!(rx, Ok(Some(_))) {
+                        let ret = authenticate_peer(&mut stream, &handle2).await;
+                        if let Ok(Some((rx, full_name))) = ret {
+                            handle2.emit(DEVICE_LINKED, full_name).unwrap();
                             info!("sending control of stream to post auth handler");
-                            handle_postauth_stream(stream, rx.unwrap().unwrap(), handle2).await;
+                            handle_postauth_stream(stream, rx, handle2).await;
                         } else {
                             info!("rejecting peer");
                         }
@@ -317,7 +317,7 @@ async fn read_stream(stream: &mut TcpStream) -> Result<(MessageType, Bytes), Com
 async fn authenticate_peer(
     stream: &mut TcpStream,
     handle: &AppHandle,
-) -> Result<Option<Receiver<Bytes>>, CommunicationError> {
+) -> Result<Option<(Receiver<Bytes>, String)>, CommunicationError> {
     info!("authenticating new peer");
     info!("reading inital message");
     let (mtype, payload) = read_stream(stream).await?;
@@ -355,16 +355,16 @@ async fn authenticate_peer(
 
     let resp = confirm_link_request(handle, &link_req.name, &win_label).await;
 
-    let rx = if resp == LinkResponse::Accepted {
+    let ret = if resp == LinkResponse::Accepted {
         let cm_lock = handle.state::<Mutex<ConnectionManager>>();
         let mut connection_manager = cm_lock.lock().unwrap();
         let mut conn = connection_manager
-            .take_connection_by_name(full_name)
+            .take_connection_by_name(full_name.clone())
             .unwrap();
         let (tx, rx) = bounded(100);
         conn.tx = Some(tx);
         connection_manager.available_connections.insert(conn);
-        Ok(Some(rx))
+        Ok(Some((rx, full_name)))
     } else {
         Ok(None)
     };
@@ -377,7 +377,7 @@ async fn authenticate_peer(
 
     let resp_message = definitions::encode(MessageType::Link, resp);
     stream.write_all(&resp_message).await.unwrap();
-    rx
+    ret
 }
 
 #[tracing::instrument(skip(handle))]

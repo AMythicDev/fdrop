@@ -6,7 +6,6 @@
     realname,
     type ConnectionInfo,
   } from "$lib/networking.svelte";
-  import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
   import { PaneGroup, Pane, PaneResizer } from "paneforge";
   import { onMount } from "svelte";
 
@@ -25,13 +24,6 @@
     prev_selected!.classList.remove(...classes);
     selected!.classList.add(...classes);
     prev_selected = selected;
-  });
-
-  const webview = getCurrentWebviewWindow();
-  webview.listen<string>("device-linked", (event) => {
-    let device = available_devices.get(event.payload);
-    device!.linked = true;
-    available_devices.set(event.payload, device!);
   });
 
   let linked_devices = $derived.by(() => {
