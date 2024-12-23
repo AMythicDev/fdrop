@@ -15,6 +15,18 @@
     resizer!.classList.add("w-1", "bg-gray-200");
   });
 
+  let selected: EventTarget | undefined = $state(undefined);
+  let prev_selected: EventTarget | undefined = $state(undefined);
+
+  $effect(() => {
+    if (selected == undefined) return;
+    let classes = ["bg-blue-400", "text-white"];
+    if (selected != undefined && prev_selected == undefined) prev_selected = selected;
+    prev_selected!.classList.remove(...classes);
+    selected!.classList.add(...classes);
+    prev_selected = selected;
+  });
+
   const webview = getCurrentWebviewWindow();
   webview.listen<string>("device-linked", (event) => {
     let device = available_devices.get(event.payload);
@@ -37,9 +49,18 @@
   <PaneGroup direction="horizontal">
     <Pane defaultSize={35} minSize={20}>
       <div class="flex flex-col justify-between h-full">
-        {#each linked_devices as device}
-          <ul>
-            <li class="border-b-2 border-gray-100 px-2 py-1">{device.name}</li>
+        {#if linked_devices.length > 0}
+          <ul class="overflow-y-scroll">
+            {#each linked_devices as device}
+              <li class="border-b-2 border-gray-100 h-16">
+                <button
+                  class="h-full w-full px-3 py-1 text-left"
+                  onclick={(e) => (selected = e.target!)}
+                >
+                  {realname(device)}
+                </button>
+              </li>
+            {/each}
           </ul>
         {:else}
           <div class="flex flex-col items-center justify-center h-full gap-2">
@@ -48,7 +69,7 @@
               Click the Link Device button to link a new device
             </span>
           </div>
-        {/each}
+        {/if}
         <Button
           class="!bg-blue-400 m-2"
           onclick={() => invoke("open_link_device_window", {})}
