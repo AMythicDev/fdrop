@@ -1,7 +1,7 @@
 use fdrop_net::{ConnectionInfo, ConnectionManager};
 use std::str::FromStr;
-use std::sync::Mutex;
 use tauri::{AppHandle, Manager, WebviewUrl, WindowEvent};
+use tokio::sync::Mutex;
 use tracing::info;
 use tracing_subscriber::{filter::Directive, EnvFilter};
 
@@ -46,7 +46,7 @@ pub fn run() {
             main_window.on_window_event(move |event| {
                 if matches!(event, WindowEvent::CloseRequested { .. }) {
                     let cm_lock = main_window2.state::<Mutex<ConnectionManager>>();
-                    let connection_manager = cm_lock.lock().unwrap();
+                    let connection_manager = tauri::async_runtime::block_on(cm_lock.lock());
                     connection_manager.shutdown().unwrap();
                     info!("shutdown mdns daemon");
                 }
@@ -58,9 +58,9 @@ pub fn run() {
 }
 
 #[tauri::command]
-fn get_available_connections(handle: AppHandle) -> String {
+async fn get_available_connections(handle: AppHandle) -> String {
     let cm_lock = handle.state::<Mutex<ConnectionManager>>();
-    let connection_manager = cm_lock.lock().unwrap();
+    let connection_manager = cm_lock.lock().await;
     serde_json::to_string(
         &connection_manager
             .get_connectionss()

@@ -18,7 +18,7 @@ thiserror.workspace = true
 tracing.workspace = true
 whoami.workspace = true
 serde.workspace = true
-tokio = { version = "1.38.0", features = ["macros"] }
+tokio.workspace = true
 mdns-sd = "0.13"
 socket2 = "0.5.8"
 prost = "0.13.3"

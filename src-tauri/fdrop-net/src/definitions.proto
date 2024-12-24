@@ -3,13 +3,15 @@ syntax = "proto3";
 package fdrop_net.definitons;
 
 message Link {
-    optional bool request = 1;
-    string name = 2;
-    optional LinkResponse response = 3;
+  optional bool request = 1;
+  string name = 2;
+  optional LinkResponse response = 3;
 }
 
+message TextMessage { string content = 1; }
+
 enum LinkResponse {
-    REJECTED = 0;
-    ACCEPTED = 1;
-    OTHER = 2;
+  REJECTED = 0;
+  ACCEPTED = 1;
+  OTHER = 2;
 }

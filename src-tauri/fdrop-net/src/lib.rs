@@ -10,17 +10,17 @@ use mdns_sd::{ServiceDaemon, ServiceEvent, ServiceInfo};
 use prost::Message;
 use socket2::{Domain, Type};
 use std::{
-    collections::HashSet,
+    collections::HashMap,
     hash::Hash,
     net::{IpAddr, Ipv6Addr, SocketAddr, SocketAddrV6},
-    sync::Mutex,
 };
 use tauri::{AppHandle, Emitter, Listener, Manager, WebviewUrl};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::{TcpListener, TcpStream},
+    sync::Mutex,
 };
-use tracing::{error, info, warn};
+use tracing::{info, warn};
 
 const MDNS_SERVICE_TYPE: &str = "_fdrop._tcp.local.";
 const FDROP_PORT: u16 = 10116;
@@ -76,25 +76,10 @@ impl From<&ServiceInfo> for Connection {
 }
 
 impl Connection {
-    pub(crate) fn create_empty_connection_with_name(name: String) -> Self {
-        let info = ConnectionInfo {
-            // TODO: Get proper name
-            name,
-            linked: false,
-        };
-
-        Self {
-            info,
-            addresses: vec![],
-            tx: None,
-            // rx: None,
-        }
-    }
-
     #[tracing::instrument]
     async fn send_link_request(
         &mut self,
-        our_name: String,
+        our_name: &str,
     ) -> Result<LinkResponse, CommunicationError> {
         if self.tx.is_some() {
             return Ok(LinkResponse::Accepted);
@@ -104,7 +89,7 @@ impl Connection {
             if let Ok(mut sock) = stream {
                 let message = definitions::protobuf::Link {
                     request: Some(true),
-                    name: our_name,
+                    name: our_name.to_string(),
                     response: None,
                 };
                 let auth_message = definitions::encode(MessageType::Link, message);
@@ -135,7 +120,7 @@ impl Connection {
 
 pub struct ConnectionManager {
     mdns_daemon: ServiceDaemon,
-    available_connections: HashSet<Connection>,
+    available_connections: HashMap<String, Connection>,
     instance_name: Option<String>,
     active_link_requests: u8,
 }
@@ -149,7 +134,7 @@ impl ConnectionManager {
             .map_err(|e| DiscoveryError::ServiceDaemonError(e))?;
         Ok(Mutex::new(Self {
             mdns_daemon: mdns,
-            available_connections: HashSet::new(),
+            available_connections: HashMap::new(),
             instance_name: None,
             active_link_requests: 0,
         }))
@@ -172,17 +157,18 @@ impl ConnectionManager {
     }
 
     pub fn get_connectionss<'a>(&'a self) -> impl Iterator<Item = &'a ConnectionInfo> {
-        self.available_connections.iter().map(|c| &c.info)
+        self.available_connections
+            .values()
+            .into_iter()
+            .map(|c| &c.info)
     }
 
-    pub(crate) fn take_connection_by_name(&mut self, name: String) -> Option<Connection> {
-        let fake_connection = Connection::create_empty_connection_with_name(name);
-        self.available_connections.take(&fake_connection)
+    pub fn get_connection_mut(&mut self, name: &str) -> Option<&mut Connection> {
+        self.available_connections.get_mut(name)
     }
 
-    pub(crate) fn connection_exists(&mut self, name: String) -> bool {
-        let fake_connection = Connection::create_empty_connection_with_name(name);
-        self.available_connections.contains(&fake_connection)
+    pub(crate) fn connection_exists(&mut self, name: &str) -> bool {
+        self.available_connections.contains_key(name)
     }
 }
 
@@ -226,14 +212,14 @@ async fn accept_connections(handle: AppHandle) -> Result<(), CommunicationError>
     Ok(())
 }
 
-fn launch_discovery_service(handle: AppHandle) -> Result<(), DiscoveryError> {
+async fn launch_discovery_service(handle: AppHandle) -> Result<(), DiscoveryError> {
     let hs = whoami::fallible::hostname().map_err(|e| DiscoveryError::HostnameError(e))?;
     let local_hostname = format!("{}.local.", hs);
 
     let user_details_lock = handle.state::<Mutex<UserConfig>>();
-    let user_details = user_details_lock.lock().unwrap();
+    let user_details = user_details_lock.lock().await;
     let cm_lock = handle.state::<Mutex<ConnectionManager>>();
-    let mut connection_manager = cm_lock.lock().unwrap();
+    let mut connection_manager = cm_lock.lock().await;
 
     let service = ServiceInfo::new(
         MDNS_SERVICE_TYPE,
@@ -258,7 +244,7 @@ fn launch_discovery_service(handle: AppHandle) -> Result<(), DiscoveryError> {
     drop(connection_manager);
     drop(user_details);
 
-    std::thread::spawn(move || -> Result<(), DiscoveryError> {
+    tokio::spawn(async move {
         while let Ok(event) = receiver.recv() {
             match event {
                 ServiceEvent::ServiceResolved(info) => {
@@ -266,19 +252,23 @@ fn launch_discovery_service(handle: AppHandle) -> Result<(), DiscoveryError> {
                         continue;
                     }
                     let cm_lock = handle.state::<Mutex<ConnectionManager>>();
-                    let mut connection_manager = cm_lock.lock().unwrap();
+                    let mut connection_manager = cm_lock.lock().await;
                     let con = Connection::from(&info);
                     handle.emit(DEVICE_DISCOVERED, &con.info)?;
-                    connection_manager.available_connections.replace(con);
+                    connection_manager
+                        .available_connections
+                        .insert(con.info.name.clone(), con);
                     info!("found device with name: {}", info.get_fullname());
                 }
                 ServiceEvent::ServiceRemoved(_, name) => {
                     let cm_lock = handle.state::<Mutex<ConnectionManager>>();
-                    let mut connection_manager = cm_lock.lock().unwrap();
-                    let con = Connection::create_empty_connection_with_name(name);
-                    handle.emit(DEVICE_REMOVED, &con.info)?;
-                    connection_manager.available_connections.remove(&con);
-                    info!("'{}' left", con.info.name);
+                    let mut connection_manager = cm_lock.lock().await;
+                    {
+                        let con = connection_manager.get_connection_mut(&name).unwrap();
+                        handle.emit(DEVICE_REMOVED, &con.info)?;
+                        info!("'{}' left", con.info.name);
+                    }
+                    connection_manager.available_connections.remove(&name);
                 }
                 ServiceEvent::SearchStopped(ss) if ss == MDNS_SERVICE_TYPE => {
                     break;
@@ -289,7 +279,7 @@ fn launch_discovery_service(handle: AppHandle) -> Result<(), DiscoveryError> {
                 }
             }
         }
-        Ok(())
+        Ok::<(), DiscoveryError>(())
     });
     Ok(())
 }
@@ -344,13 +334,13 @@ async fn authenticate_peer(
 
     let (our_name, win_label) = {
         let cm_lock = handle.state::<Mutex<ConnectionManager>>();
-        let mut connection_manager = cm_lock.lock().unwrap();
+        let mut connection_manager = cm_lock.lock().await;
         let our_name = connection_manager.instance_name.clone().unwrap();
         let win_label = "respond-link-request-".to_string()
             + &connection_manager.active_link_requests.to_string();
         connection_manager.active_link_requests += 1;
 
-        if !connection_manager.connection_exists(full_name.clone()) {
+        if !connection_manager.connection_exists(&full_name) {
             return Err(CommunicationError::PeerNotFound);
         }
         (our_name, win_label)
@@ -360,13 +350,10 @@ async fn authenticate_peer(
 
     let ret = if resp == LinkResponse::Accepted {
         let cm_lock = handle.state::<Mutex<ConnectionManager>>();
-        let mut connection_manager = cm_lock.lock().unwrap();
-        let mut conn = connection_manager
-            .take_connection_by_name(full_name.clone())
-            .unwrap();
+        let mut connection_manager = cm_lock.lock().await;
+        let con = connection_manager.get_connection_mut(&full_name).unwrap();
         let (tx, rx) = bounded(100);
-        conn.tx = Some(tx);
-        connection_manager.available_connections.insert(conn);
+        con.tx = Some(tx);
         Ok(Some((rx, full_name)))
     } else {
         Ok(None)
@@ -432,7 +419,9 @@ pub mod commands {
     use super::*;
     #[tauri::command]
     pub async fn enable_networking(handle: AppHandle) -> Result<(), String> {
-        launch_discovery_service(handle.clone()).map_err(|e| NetworkError::from(e))?;
+        launch_discovery_service(handle.clone())
+            .await
+            .map_err(|e| NetworkError::from(e))?;
         accept_connections(handle)
             .await
             .map_err(|e| NetworkError::from(e))?;
@@ -444,14 +433,15 @@ pub mod commands {
         handle: AppHandle,
         name: String,
     ) -> Result<&'static str, String> {
-        let (mut actual_connection, our_name) = {
-            let cm_lock = handle.state::<Mutex<ConnectionManager>>();
-            let user_config_lock = handle.state::<Mutex<UserConfig>>();
-            let mut connection_manager = cm_lock.lock().unwrap();
-            let user_config = user_config_lock.lock().unwrap();
-            let actual_connection = connection_manager.take_connection_by_name(name).unwrap();
-            (actual_connection, user_config.instance_name.clone())
-        };
+        // let (mut actual_connection, our_name) = {
+        let cm_lock = handle.state::<Mutex<ConnectionManager>>();
+        let user_config_lock = handle.state::<Mutex<UserConfig>>();
+        let mut connection_manager = cm_lock.lock().await;
+        let user_config = user_config_lock.lock().await;
+        let actual_connection = connection_manager.get_connection_mut(&name).unwrap();
+        let our_name = &user_config.instance_name.clone();
+        // (actual_connection, user_config.instance_name.clone())
+        // };
 
         let res = actual_connection
             .send_link_request(our_name)
@@ -461,7 +451,7 @@ pub mod commands {
             LinkResponse::Accepted => Ok("accepted"),
             LinkResponse::Rejected => {
                 let cm_lock = handle.state::<Mutex<ConnectionManager>>();
-                let mut connection_manager = cm_lock.lock().unwrap();
+                let mut connection_manager = cm_lock.lock().await;
                 let win_label = "rejected-link-request-".to_string()
                     + &connection_manager.active_link_requests.to_string();
                 connection_manager.active_link_requests += 1;
@@ -490,11 +480,6 @@ pub mod commands {
             }
             LinkResponse::Other => Ok("other"),
         };
-        let cm_lock = handle.state::<Mutex<ConnectionManager>>();
-        let mut connection_manager = cm_lock.lock().unwrap();
-        connection_manager
-            .available_connections
-            .insert(actual_connection);
         res
     }
 }

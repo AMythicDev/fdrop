@@ -10,6 +10,7 @@ pub use protobuf::*;
 #[derive(Debug, PartialEq)]
 pub enum MessageType {
     Link = 1 << 7,
+    TextMessage = 0x01,
 }
 
 impl TryFrom<u8> for MessageType {
@@ -17,6 +18,7 @@ impl TryFrom<u8> for MessageType {
     fn try_from(value: u8) -> Result<Self, Self::Error> {
         match value {
             128 => Ok(Self::Link),
+            1 => Ok(Self::TextMessage),
             _ => Err(std::io::Error::new(
                 std::io::ErrorKind::InvalidInput,
                 "invalid value given to convert to message type",
