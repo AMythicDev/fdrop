@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { invoke } from "@tauri-apps/api/core";
   import Button from "flowbite-svelte/Button.svelte";
   import Helper from "flowbite-svelte/Helper.svelte";
   import Kbd from "flowbite-svelte/Kbd.svelte";
@@ -8,11 +9,17 @@
   import Send from "../components/Send.svelte";
   import { type Transfer, Sender } from "$lib/networking.svelte";
 
+  let { selected } = $props();
+
   let chat_message: string = $state("");
 
   function send_message() {
-    console.log("send message");
+    console.log(selected);
     if (chat_message.length == 0) return;
+    invoke("send_text_message", {
+      name: selected.name,
+      contents: chat_message,
+    });
     transfers.push({
       content: chat_message,
       sentby: Sender.Local,

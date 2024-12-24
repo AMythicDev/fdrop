@@ -16,16 +16,17 @@
     resizer!.classList.add("w-1", "bg-gray-200");
   });
 
-  let selected: EventTarget | undefined = $state(undefined);
-  let prev_selected: EventTarget | undefined = $state(undefined);
+  let selected: ConnectionInfo | undefined = $state();
+  let selected_elm: EventTarget | undefined = $state(undefined);
+  let prev_selected_elm: EventTarget | undefined = $state(undefined);
   $effect(() => {
-    if (selected == undefined) return;
+    if (selected_elm == undefined) return;
     let classes = ["bg-blue-400", "text-white"];
-    if (selected != undefined && prev_selected == undefined)
-      prev_selected = selected;
-    prev_selected!.classList.remove(...classes);
-    selected!.classList.add(...classes);
-    prev_selected = selected;
+    if (selected_elm != undefined && prev_selected_elm == undefined)
+      prev_selected_elm = selected_elm;
+    prev_selected_elm!.classList.remove(...classes);
+    selected_elm!.classList.add(...classes);
+    prev_selected_elm = selected_elm;
   });
 
   let linked_devices = $derived.by(() => {
@@ -49,7 +50,10 @@
               <li class="border-b-2 border-gray-100 h-16">
                 <button
                   class="h-full w-full px-3 py-1 text-left"
-                  onclick={(e) => (selected = e.target!)}
+                  onclick={(e) => {
+                    selected_elm = e.target!;
+                    selected = device;
+                  }}
                 >
                   {realname(device)}
                 </button>
@@ -73,8 +77,8 @@
     </Pane>
     <PaneResizer bind:el={resizer} />
     <Pane defaultSize={65} minSize={40}>
-      {#if selected}
-      <Chat />
+      {#if selected_elm}
+        <Chat {selected} />
       {:else}
         <div class="h-full flex flex-col justify-center items-center gap-2">
           <span>No devices selected</span>

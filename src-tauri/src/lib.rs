@@ -31,6 +31,7 @@ pub fn run() {
             open_link_device_window,
             get_available_connections,
             fdrop_net::commands::enable_networking,
+            fdrop_net::commands::send_text_message,
             fdrop_net::commands::link_device_by_name,
         ])
         .setup(|app| {

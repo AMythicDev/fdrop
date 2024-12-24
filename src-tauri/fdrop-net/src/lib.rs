@@ -20,7 +20,7 @@ use tokio::{
     net::{TcpListener, TcpStream},
     sync::Mutex,
 };
-use tracing::{info, warn};
+use tracing::{error, info, warn};
 
 const MDNS_SERVICE_TYPE: &str = "_fdrop._tcp.local.";
 const FDROP_PORT: u16 = 10116;
@@ -28,13 +28,13 @@ const DEVICE_DISCOVERED: &str = "device-discovered";
 const DEVICE_REMOVED: &str = "device-removed";
 const LINK_RESPONSE: &str = "link-response";
 const DEVICE_LINKED: &str = "device-linked";
+const MAX_PAYLOAD_SIZE: usize = 2048;
 
 #[derive(Debug)]
 pub struct Connection {
     pub info: ConnectionInfo,
     addresses: Vec<IpAddr>,
     tx: Option<Sender<Bytes>>,
-    // rx: Option<Receiver<Bytes>>,
 }
 
 #[derive(Debug, serde::Serialize, Clone)]
@@ -76,9 +76,10 @@ impl From<&ServiceInfo> for Connection {
 }
 
 impl Connection {
-    #[tracing::instrument]
+    #[tracing::instrument(skip(handle))]
     async fn send_link_request(
         &mut self,
+        handle: AppHandle,
         our_name: &str,
     ) -> Result<LinkResponse, CommunicationError> {
         if self.tx.is_some() {
@@ -110,6 +111,11 @@ impl Connection {
                     info!("the peer rejected the link request");
                     return Ok(LinkResponse::Rejected);
                 }
+                let (tx, rx) = flume::bounded(100);
+                self.tx = Some(tx);
+                tokio::spawn(async move {
+                    handle_postauth_stream(sock, rx, handle).await;
+                });
                 info!("successfully linked with peer");
                 return Ok(LinkResponse::Accepted);
             }
@@ -285,7 +291,6 @@ async fn launch_discovery_service(handle: AppHandle) -> Result<(), DiscoveryErro
 }
 
 async fn read_stream(stream: &mut TcpStream) -> Result<(MessageType, Bytes), CommunicationError> {
-    const MAX_PAYLOAD_SIZE: usize = 2048;
     let mtype_u8 = stream
         .read_u8()
         .await
@@ -410,9 +415,19 @@ async fn confirm_link_request(
     resp
 }
 
-async fn handle_postauth_stream(_stream: TcpStream, _rx: Receiver<Bytes>, _handle: AppHandle) {
+async fn handle_postauth_stream(mut stream: TcpStream, rx: Receiver<Bytes>, _handle: AppHandle) {
     info!("issued a handler for peer");
-    todo!();
+    tokio::select! {
+        Ok(msg) = rx.recv_async() => {
+            if let Err(e) = stream.write_all(&msg).await {
+                error!("failed to send message to peer: {}", e);
+            }
+            info!("sent message to peer")
+        }
+        Ok((mtype, _message)) = read_stream(&mut stream) => {
+            info!("got message from peer type={:?}", mtype);
+        }
+    }
 }
 
 pub mod commands {
@@ -429,22 +444,37 @@ pub mod commands {
     }
 
     #[tauri::command]
+    pub async fn send_text_message(
+        handle: AppHandle,
+        name: String,
+        contents: String,
+    ) -> Result<(), String> {
+        let cm_lock = handle.state::<Mutex<ConnectionManager>>();
+        let mut connection_manager = cm_lock.lock().await;
+        let con = connection_manager.get_connection_mut(&name).unwrap();
+
+        let message = definitions::protobuf::TextMessage { contents };
+        let encmsg = definitions::encode(MessageType::TextMessage, message);
+
+        let tx = con.tx.as_mut().unwrap();
+        tx.send_async(encmsg).await.unwrap();
+        Ok(())
+    }
+
+    #[tauri::command]
     pub async fn link_device_by_name(
         handle: AppHandle,
         name: String,
     ) -> Result<&'static str, String> {
-        // let (mut actual_connection, our_name) = {
         let cm_lock = handle.state::<Mutex<ConnectionManager>>();
         let user_config_lock = handle.state::<Mutex<UserConfig>>();
         let mut connection_manager = cm_lock.lock().await;
         let user_config = user_config_lock.lock().await;
-        let actual_connection = connection_manager.get_connection_mut(&name).unwrap();
+        let con = connection_manager.get_connection_mut(&name).unwrap();
         let our_name = &user_config.instance_name.clone();
-        // (actual_connection, user_config.instance_name.clone())
-        // };
 
-        let res = actual_connection
-            .send_link_request(our_name)
+        let res = con
+            .send_link_request(handle.clone(), our_name)
             .await
             .map_err(|e| NetworkError::from(e))?;
         let res = match res {
@@ -470,7 +500,7 @@ pub mod commands {
                 // they are emitted before the frontend is fully loaded.
                 .initialization_script(&format!(
                     "localStorage.setItem('device-name', '{}')",
-                    actual_connection.info.name
+                    con.info.name
                 ))
                 .parent(&main)
                 .unwrap()

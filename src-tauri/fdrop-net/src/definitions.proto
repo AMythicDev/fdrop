@@ -8,7 +8,7 @@ message Link {
   optional LinkResponse response = 3;
 }
 
-message TextMessage { string content = 1; }
+message TextMessage { string contents = 1; }
 
 enum LinkResponse {
   REJECTED = 0;
