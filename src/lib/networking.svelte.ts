@@ -7,6 +7,16 @@ export type ConnectionInfo = {
   linked: boolean
 }
 
+export enum Sender {
+  Local,
+  Peer,
+}
+
+export type Transfer = {
+  content: string,
+  sentby: Sender,
+}
+
 export function realname(conn: ConnectionInfo): string {
   let name_end = conn.name.indexOf("._fdrop");
   if (name_end == -1) name_end = conn.name.length;

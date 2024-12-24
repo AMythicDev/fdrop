@@ -1,6 +1,8 @@
 <script lang="ts">
   import { invoke } from "@tauri-apps/api/core";
   import Button from "flowbite-svelte/Button.svelte";
+  import Chat from "./Chat.svelte";
+
   import {
     available_devices,
     realname,
@@ -16,11 +18,11 @@
 
   let selected: EventTarget | undefined = $state(undefined);
   let prev_selected: EventTarget | undefined = $state(undefined);
-
   $effect(() => {
     if (selected == undefined) return;
     let classes = ["bg-blue-400", "text-white"];
-    if (selected != undefined && prev_selected == undefined) prev_selected = selected;
+    if (selected != undefined && prev_selected == undefined)
+      prev_selected = selected;
     prev_selected!.classList.remove(...classes);
     selected!.classList.add(...classes);
     prev_selected = selected;
@@ -71,7 +73,16 @@
     </Pane>
     <PaneResizer bind:el={resizer} />
     <Pane defaultSize={65} minSize={40}>
-      <div class="h-full">Hello World</div>
+      {#if selected}
+      <Chat />
+      {:else}
+        <div class="h-full flex flex-col justify-center items-center gap-2">
+          <span>No devices selected</span>
+          <span class="text-gray-400"
+            >Select a device from the left panel to transfer content</span
+          >
+        </div>
+      {/if}
     </Pane>
   </PaneGroup>
 </div>
