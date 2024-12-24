@@ -12,9 +12,14 @@ export enum Sender {
   Peer,
 }
 
+export enum TransferType {
+  TextMessage,
+}
+
 export type Transfer = {
-  content: string,
-  sentby: Sender,
+  type: TransferType,
+  display_content: string,
+  sentby: Sender | undefined,
 }
 
 export function realname(conn: ConnectionInfo): string {

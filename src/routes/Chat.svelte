@@ -1,5 +1,6 @@
 <script lang="ts">
   import { invoke } from "@tauri-apps/api/core";
+  import { listen } from "@tauri-apps/api/event";
   import Button from "flowbite-svelte/Button.svelte";
   import Helper from "flowbite-svelte/Helper.svelte";
   import Kbd from "flowbite-svelte/Kbd.svelte";
@@ -7,7 +8,7 @@
   import InputAddon from "flowbite-svelte/InputAddon.svelte";
   import ButtonGroup from "flowbite-svelte/ButtonGroup.svelte";
   import Send from "../components/Send.svelte";
-  import { type Transfer, Sender } from "$lib/networking.svelte";
+  import { type Transfer, Sender, TransferType } from "$lib/networking.svelte";
 
   let { selected } = $props();
 
@@ -21,12 +22,19 @@
       contents: chat_message,
     });
     transfers.push({
-      content: chat_message,
+      type: TransferType.TextMessage,
+      display_content: chat_message,
       sentby: Sender.Local,
     });
   }
 
   let transfers: Transfer[] = $state([]);
+
+  listen<Transfer>("transfer", (event) => {
+    let transfer = event.payload;
+    transfer.sentby = Sender.Peer;
+    transfers.push(transfer);
+  });
 </script>
 
 <div class="h-full p-2">
@@ -40,7 +48,7 @@
             ? 'float-right bg-blue-400'
             : 'bg-green-400'} w-max text-white py-0.5 px-2.5 rounded-md"
         >
-          {transfer.content}
+          {transfer.display_content}
         </div>
       </div>
     {/each}

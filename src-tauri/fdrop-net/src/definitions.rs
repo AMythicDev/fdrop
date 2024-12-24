@@ -7,13 +7,13 @@ use prost::Message;
 pub use protobuf::*;
 
 #[repr(u8)]
-#[derive(Debug, PartialEq)]
-pub enum MessageType {
+#[derive(Debug, PartialEq, Clone, Copy, serde::Serialize)]
+pub enum TransferType {
     Link = 1 << 7,
     TextMessage = 0x01,
 }
 
-impl TryFrom<u8> for MessageType {
+impl TryFrom<u8> for TransferType {
     type Error = std::io::Error;
     fn try_from(value: u8) -> Result<Self, Self::Error> {
         match value {
@@ -27,7 +27,7 @@ impl TryFrom<u8> for MessageType {
     }
 }
 
-pub(crate) fn encode(mtype: MessageType, message: impl Message) -> Bytes {
+pub(crate) fn encode(mtype: TransferType, message: impl Message) -> Bytes {
     let mut buf = BytesMut::with_capacity(1024);
     buf.put_u8(mtype as u8);
     let length = message.encoded_len() as u16;

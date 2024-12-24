@@ -2,7 +2,7 @@ mod definitions;
 mod errors;
 
 use bytes::{Bytes, BytesMut};
-use definitions::{LinkResponse, MessageType};
+use definitions::{LinkResponse, TransferType};
 use errors::{CommunicationError, DiscoveryError, NetworkError};
 use fdrop_config::UserConfig;
 use flume::{bounded, Receiver, Sender};
@@ -43,6 +43,12 @@ pub struct ConnectionInfo {
     pub linked: bool,
 }
 
+#[derive(serde::Serialize, Clone)]
+pub struct Transfer {
+    ttype: TransferType,
+    display_content: String,
+}
+
 impl PartialEq for Connection {
     fn eq(&self, other: &Self) -> bool {
         self.info.name == other.info.name
@@ -70,7 +76,6 @@ impl From<&ServiceInfo> for Connection {
             info,
             addresses: value.get_addresses().iter().map(|i| *i).collect(),
             tx: None,
-            // rx: None,
         }
     }
 }
@@ -93,14 +98,14 @@ impl Connection {
                     name: our_name.to_string(),
                     response: None,
                 };
-                let auth_message = definitions::encode(MessageType::Link, message);
+                let auth_message = definitions::encode(TransferType::Link, message);
                 info!("sending link request to address {}", addr);
                 sock.write_all(&auth_message)
                     .await
                     .map_err(|e| CommunicationError::WriteError(e))?;
-                let (mtype, mut payload) = read_stream(&mut sock).await.unwrap();
-                if MessageType::try_from(mtype).unwrap() != MessageType::Link {
-                    warn!("link request received invalid response type from peer. rejecting peer");
+                let (ttype, mut payload) = read_stream(&mut sock).await.unwrap();
+                if TransferType::try_from(ttype).unwrap() != TransferType::Link {
+                    error!("link request received invalid response type from peer. rejecting peer");
                 }
                 let resp = definitions::Link::decode(&mut payload)
                     .map_err(|_| CommunicationError::DecodeError)?;
@@ -290,12 +295,12 @@ async fn launch_discovery_service(handle: AppHandle) -> Result<(), DiscoveryErro
     Ok(())
 }
 
-async fn read_stream(stream: &mut TcpStream) -> Result<(MessageType, Bytes), CommunicationError> {
-    let mtype_u8 = stream
+async fn read_stream(stream: &mut TcpStream) -> Result<(TransferType, Bytes), CommunicationError> {
+    let ttype_u8 = stream
         .read_u8()
         .await
         .map_err(|e| CommunicationError::ReadError(e))?;
-    let mtype = MessageType::try_from(mtype_u8)?;
+    let ttype = TransferType::try_from(ttype_u8)?;
     let payload_size = stream
         .read_u16()
         .await
@@ -309,7 +314,7 @@ async fn read_stream(stream: &mut TcpStream) -> Result<(MessageType, Bytes), Com
         .read_exact(&mut payload)
         .await
         .map_err(|e| CommunicationError::ReadError(e))?;
-    Ok((mtype, payload.freeze()))
+    Ok((ttype, payload.freeze()))
 }
 
 async fn authenticate_peer(
@@ -319,7 +324,7 @@ async fn authenticate_peer(
     info!("authenticating new peer");
     info!("reading inital message");
     let (mtype, payload) = read_stream(stream).await?;
-    if mtype != MessageType::Link {
+    if mtype != TransferType::Link {
         warn!("peer sent unexpected messages before linking");
         return Err(CommunicationError::Unauthenticated);
     }
@@ -370,11 +375,12 @@ async fn authenticate_peer(
         response: Some(resp as i32),
     };
 
-    let resp_message = definitions::encode(MessageType::Link, resp);
+    let resp_message = definitions::encode(TransferType::Link, resp);
     stream.write_all(&resp_message).await.unwrap();
     ret
 }
 
+/// Create confirmation window for a link request
 #[tracing::instrument(skip(handle))]
 async fn confirm_link_request(
     handle: &AppHandle,
@@ -382,7 +388,6 @@ async fn confirm_link_request(
     win_label: &str,
 ) -> LinkResponse {
     info!("creating confirmation window for peer");
-    // Create confirmation window
     let main = handle.get_webview_window("main").unwrap();
     let win = tauri::WebviewWindowBuilder::new(
         handle,
@@ -415,17 +420,55 @@ async fn confirm_link_request(
     resp
 }
 
-async fn handle_postauth_stream(mut stream: TcpStream, rx: Receiver<Bytes>, _handle: AppHandle) {
+async fn handle_postauth_stream(mut stream: TcpStream, rx: Receiver<Bytes>, handle: AppHandle) {
     info!("issued a handler for peer");
-    tokio::select! {
-        Ok(msg) = rx.recv_async() => {
-            if let Err(e) = stream.write_all(&msg).await {
-                error!("failed to send message to peer: {}", e);
+    loop {
+        tokio::select! {
+            Ok(msg) = rx.recv_async() => {
+                if let Err(e) = stream.write_all(&msg).await {
+                    error!("failed to send message to peer: {}", e);
+                }
+                info!("sent message to peer")
             }
-            info!("sent message to peer")
+            Ok((ttype, buff)) = read_stream(&mut stream) => {
+                info!("got message from peer type={:?}", ttype);
+                transfer_handler(ttype, buff, &handle, &mut stream).await;
+            }
         }
-        Ok((mtype, _message)) = read_stream(&mut stream) => {
-            info!("got message from peer type={:?}", mtype);
+    }
+}
+
+async fn transfer_handler(
+    ttype: TransferType,
+    buff: Bytes,
+    handle: &AppHandle,
+    stream: &mut TcpStream,
+) {
+    match ttype {
+        TransferType::TextMessage => {
+            if let Ok(message) = definitions::protobuf::TextMessage::decode(buff) {
+                let payload = Transfer {
+                    ttype,
+                    display_content: message.contents,
+                };
+                handle.emit("transfer", payload).unwrap();
+            } else {
+                error!("peer sent invalid bytes");
+            }
+        }
+        TransferType::Link => {
+            let user_config_lock = handle.state::<Mutex<UserConfig>>();
+            let user_config = user_config_lock.lock().await;
+            let our_name = user_config.instance_name.clone();
+
+            let resp = definitions::Link {
+                request: None,
+                name: our_name,
+                response: Some(LinkResponse::Accepted.into()),
+            };
+
+            let resp_message = definitions::encode(TransferType::Link, resp);
+            stream.write_all(&resp_message).await.unwrap();
         }
     }
 }
@@ -454,7 +497,7 @@ pub mod commands {
         let con = connection_manager.get_connection_mut(&name).unwrap();
 
         let message = definitions::protobuf::TextMessage { contents };
-        let encmsg = definitions::encode(MessageType::TextMessage, message);
+        let encmsg = definitions::encode(TransferType::TextMessage, message);
 
         let tx = con.tx.as_mut().unwrap();
         tx.send_async(encmsg).await.unwrap();
