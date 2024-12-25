@@ -212,14 +212,14 @@ async fn accept_connections(handle: AppHandle) -> Result<(), CommunicationError>
     let listener: TcpListener = TcpListener::from_std(std_listener)?;
     info!("created the connection acceptor");
 
-    tauri::async_runtime::spawn(async move {
+    tokio::spawn(async move {
         loop {
             let conn = listener.accept().await;
             match conn {
                 Ok((mut stream, _)) => {
                     let handle2 = handle.clone();
-                    info!("eshtablished stream with peer");
-                    tauri::async_runtime::spawn(async move {
+                    tokio::spawn(async move {
+                        info!("eshtablished stream with peer");
                         let ret = authenticate_peer(&mut stream, &handle2).await;
                         if let Ok(Some((rx, full_name))) = ret {
                             // HACK: Sleep for some time prevents the subsequent emit call to not hang and crash the
@@ -237,9 +237,9 @@ async fn accept_connections(handle: AppHandle) -> Result<(), CommunicationError>
                         } else {
                             info!("rejecting peer");
                         }
-                    })
-                    .await
-                    .unwrap();
+                    });
+                    // HACK: Sleep for some time to give time for above task to start
+                    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
                 }
                 Err(e) => warn!("failed to connect to peer due to {e}"),
             }
@@ -504,10 +504,15 @@ async fn transfer_handler(
                 let user_config_lock = handle.state::<Mutex<UserConfig>>();
                 let user_config = user_config_lock.lock().await;
                 let mut file_path = user_config.fdrop_dir.clone();
-                file_path.push(message.file_name);
+                file_path.push(&message.file_name);
                 if let Ok(_file) = tokio::fs::File::create(&file_path).await {
                     info!(?file_path, "created empty file");
                 }
+                let payload = Transfer {
+                    ttype,
+                    display_content: message.file_name,
+                };
+                handle.emit("transfer", payload).unwrap();
             } else {
                 error!("peer sent invalid bytes");
             }

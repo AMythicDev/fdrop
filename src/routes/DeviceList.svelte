@@ -35,11 +35,11 @@
           selected = device;
         }}
       >
-        {#if device.platform == "macos"}
+        {#if device.platform == "linux"}
           <Linux class="h-12 w-12 inline" />
         {:else if device.platform == "windows"}
           <Windows class="h-12 w-12 inline" />
-        {:else if device.platform == "linux"}
+        {:else if device.platform == "macos"}
           <Macos class="h-12 w-12 inline fill-gray-300" />
           <!-- 
             TODO: Add ios and android icons here
