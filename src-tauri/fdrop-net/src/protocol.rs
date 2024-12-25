@@ -10,6 +10,7 @@ pub use protobuf::*;
 #[derive(Debug, PartialEq, Clone, Copy, serde::Serialize)]
 pub enum TransferType {
     Link = 1 << 7,
+    PrepareFileTransfer = 0x02,
     TextMessage = 0x01,
 }
 
@@ -19,6 +20,7 @@ impl TryFrom<u8> for TransferType {
         match value {
             128 => Ok(Self::Link),
             1 => Ok(Self::TextMessage),
+            2 => Ok(Self::PrepareFileTransfer),
             _ => Err(std::io::Error::new(
                 std::io::ErrorKind::InvalidInput,
                 "invalid value given to convert to message type",

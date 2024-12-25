@@ -15,7 +15,7 @@
   });
 
   async function link_device(name: string) {
-    let link_resp = await invoke("link_device_by_name", { name: name });
+    let link_resp = await invoke("link_device_by_name", { cname: name });
     if (link_resp == "accepted") {
       await emitTo("main", "device-linked", name);
       // TODO: handle this

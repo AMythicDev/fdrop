@@ -18,7 +18,7 @@
     console.log(selected);
     if (chat_message.length == 0) return;
     invoke("send_text_message", {
-      name: selected.name,
+      cname: selected.name,
       contents: chat_message,
     });
     transfers.push({

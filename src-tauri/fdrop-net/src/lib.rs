@@ -35,11 +35,11 @@ static OUR_PLATFORM: &'static str = "linux";
 #[cfg(target_os = "windows")]
 static OUR_PLATFORM: &'static str = "windows";
 #[cfg(target_os = "macos")]
-static PLATFORM: &'static str = "macos";
+static OUR_PLATFORM: &'static str = "macos";
 #[cfg(target_os = "android")]
-static PLATFORM: &'static str = "android";
+static OUR_PLATFORM: &'static str = "android";
 #[cfg(target_os = "ios")]
-static PLATFORM: &'static str = "ios";
+static OUR_PLATFORM: &'static str = "ios";
 
 #[derive(Debug)]
 pub struct Connection {
@@ -458,7 +458,7 @@ async fn handle_postauth_stream(mut stream: TcpStream, rx: Receiver<Bytes>, hand
                 info!("sent message to peer")
             }
             Ok((ttype, buff)) = read_stream(&mut stream) => {
-                info!("got message from peer type={:?}", ttype);
+                info!(?ttype, "got transfer from peer");
                 transfer_handler(ttype, buff, &handle, &mut stream).await;
             }
         }
@@ -499,10 +499,27 @@ async fn transfer_handler(
             let resp_message = protocol::encode(TransferType::Link, resp);
             stream.write_all(&resp_message).await.unwrap();
         }
+        TransferType::PrepareFileTransfer => {
+            if let Ok(message) = protocol::protobuf::PrepareFileTransfer::decode(buff) {
+                let user_config_lock = handle.state::<Mutex<UserConfig>>();
+                let user_config = user_config_lock.lock().await;
+                let mut file_path = user_config.fdrop_dir.clone();
+                file_path.push(message.file_name);
+                if let Ok(_file) = tokio::fs::File::create(&file_path).await {
+                    info!(?file_path, "created empty file");
+                }
+            } else {
+                error!("peer sent invalid bytes");
+            }
+        }
     }
 }
 
 pub mod commands {
+    use std::path::PathBuf;
+
+    use fdrop_common::human_readable_error;
+
     use super::*;
     #[tauri::command]
     pub async fn enable_networking(handle: AppHandle) -> Result<(), String> {
@@ -518,12 +535,12 @@ pub mod commands {
     #[tauri::command]
     pub async fn send_text_message(
         handle: AppHandle,
-        name: String,
+        cname: String,
         contents: String,
     ) -> Result<(), String> {
         let cm_lock = handle.state::<Mutex<ConnectionManager>>();
         let mut connection_manager = cm_lock.lock().await;
-        let con = connection_manager.get_connection_mut(&name).unwrap();
+        let con = connection_manager.get_connection_mut(&cname).unwrap();
 
         let message = protocol::protobuf::TextMessage { contents };
         let encmsg = protocol::encode(TransferType::TextMessage, message);
@@ -534,15 +551,49 @@ pub mod commands {
     }
 
     #[tauri::command]
+    pub async fn send_file(
+        handle: AppHandle,
+        cname: String,
+        file_path: String,
+    ) -> Result<(), String> {
+        let cm_lock = handle.state::<Mutex<ConnectionManager>>();
+        let mut connection_manager = cm_lock.lock().await;
+        let con = connection_manager.get_connection_mut(&cname).unwrap();
+
+        let file_path = PathBuf::from(file_path);
+        let file_name = file_path.file_name().unwrap().to_str().unwrap().to_string();
+        let file = tokio::fs::File::open(file_path)
+            .await
+            .map_err(|e| human_readable_error(&e))?;
+        // TODO: handle error
+        let size = file
+            .metadata()
+            .await
+            .map_err(|e| human_readable_error(&e))?
+            .len();
+
+        let transfer = protocol::protobuf::PrepareFileTransfer { file_name, size };
+        let enctransfer = protocol::encode(TransferType::PrepareFileTransfer, transfer);
+        con.tx
+            .as_mut()
+            .unwrap()
+            .send_async(enctransfer)
+            .await
+            .unwrap();
+
+        Ok(())
+    }
+
+    #[tauri::command]
     pub async fn link_device_by_name(
         handle: AppHandle,
-        name: String,
+        cname: String,
     ) -> Result<&'static str, String> {
         let cm_lock = handle.state::<Mutex<ConnectionManager>>();
         let user_config_lock = handle.state::<Mutex<UserConfig>>();
         let mut connection_manager = cm_lock.lock().await;
         let user_config = user_config_lock.lock().await;
-        let con = connection_manager.get_connection_mut(&name).unwrap();
+        let con = connection_manager.get_connection_mut(&cname).unwrap();
         let our_name = &user_config.instance_name.clone();
 
         let res = con
