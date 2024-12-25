@@ -1,7 +1,7 @@
 <script lang="ts">
   import { getActivePage } from "../../lib/welcome";
   import Buttons from "./Buttons.svelte";
-  import DeviceLink from "../../components/DeviceLink.svelte";
+  import DeviceLink from "$lib/components/DeviceLink.svelte";
 
   let { pageIndex, ref = $bindable() } = $props();
   let activePage = getActivePage();

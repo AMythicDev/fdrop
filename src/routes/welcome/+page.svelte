@@ -9,7 +9,7 @@
   } from "$lib/welcome";
   import { Heading, P } from "flowbite-svelte";
 
-  import Stepper from "../../components/Stepper.svelte";
+  import Stepper from "$lib/components/Stepper.svelte";
   import InitialSetup from "./InitialSetup.svelte";
   import KeyGeneration from "./KeyGeneration.svelte";
   import LinkDevice from "./LinkDevice.svelte";

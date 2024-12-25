@@ -1,5 +1,5 @@
 <script lang="ts">
-  import DeviceLink from "../../components/DeviceLink.svelte";
+  import DeviceLink from "$lib/components/DeviceLink.svelte";
   import {
     refresh_available_devices,
     listen_device_events,
