@@ -5,6 +5,7 @@ import { SvelteMap } from "svelte/reactivity";
 export type ConnectionInfo = {
   name: string,
   linked: boolean
+  platform?: string,
 }
 
 export enum Sender {
@@ -41,10 +42,11 @@ export function listen_device_events() {
   listen<ConnectionInfo>("device-removed", (event) => {
     available_devices.delete(event.payload.name);
   });
-  listen<string>("device-linked", (event) => {
-    let device = available_devices.get(event.payload);
+  listen<ConnectionInfo>("device-linked", (event) => {
+    let device = available_devices.get(event.payload.name);
     device!.linked = true;
-    available_devices.set(event.payload, device!);
+    device!.platform = event.payload.platform;
+    available_devices.set(event.payload.name, device!);
   });
 }
 

@@ -1,13 +1,13 @@
-mod definitions;
 mod errors;
+mod protocol;
 
 use bytes::{Bytes, BytesMut};
-use definitions::{LinkResponse, TransferType};
 use errors::{CommunicationError, DiscoveryError, NetworkError};
 use fdrop_config::UserConfig;
 use flume::{bounded, Receiver, Sender};
 use mdns_sd::{ServiceDaemon, ServiceEvent, ServiceInfo};
 use prost::Message;
+use protocol::{LinkResponse, TransferType};
 use socket2::{Domain, Type};
 use std::{
     collections::HashMap,
@@ -30,6 +30,17 @@ const LINK_RESPONSE: &str = "link-response";
 const DEVICE_LINKED: &str = "device-linked";
 const MAX_PAYLOAD_SIZE: usize = 2048;
 
+#[cfg(target_os = "linux")]
+static OUR_PLATFORM: &'static str = "linux";
+#[cfg(target_os = "windows")]
+static OUR_PLATFORM: &'static str = "windows";
+#[cfg(target_os = "macos")]
+static PLATFORM: &'static str = "macos";
+#[cfg(target_os = "android")]
+static PLATFORM: &'static str = "android";
+#[cfg(target_os = "ios")]
+static PLATFORM: &'static str = "ios";
+
 #[derive(Debug)]
 pub struct Connection {
     pub info: ConnectionInfo,
@@ -41,6 +52,7 @@ pub struct Connection {
 pub struct ConnectionInfo {
     pub name: String,
     pub linked: bool,
+    pub platform: Option<String>,
 }
 
 #[derive(serde::Serialize, Clone)]
@@ -71,6 +83,7 @@ impl From<&ServiceInfo> for Connection {
             // TODO: Get proper name
             name: value.get_fullname().to_string(),
             linked: false,
+            platform: None,
         };
         Connection {
             info,
@@ -93,12 +106,13 @@ impl Connection {
         for addr in &self.addresses {
             let stream = TcpStream::connect(SocketAddr::new(addr.clone(), FDROP_PORT)).await;
             if let Ok(mut sock) = stream {
-                let message = definitions::protobuf::Link {
+                let message = protocol::protobuf::Link {
                     request: Some(true),
                     name: our_name.to_string(),
+                    platform: String::from(OUR_PLATFORM),
                     response: None,
                 };
-                let auth_message = definitions::encode(TransferType::Link, message);
+                let auth_message = protocol::encode(TransferType::Link, message);
                 info!("sending link request to address {}", addr);
                 sock.write_all(&auth_message)
                     .await
@@ -107,17 +121,18 @@ impl Connection {
                 if TransferType::try_from(ttype).unwrap() != TransferType::Link {
                     error!("link request received invalid response type from peer. rejecting peer");
                 }
-                let resp = definitions::Link::decode(&mut payload)
+                let resp = protocol::Link::decode(&mut payload)
                     .map_err(|_| CommunicationError::DecodeError)?;
                 if matches!(
                     LinkResponse::try_from(resp.response.unwrap()).unwrap(),
-                    definitions::LinkResponse::Rejected | definitions::LinkResponse::Other
+                    protocol::LinkResponse::Rejected | protocol::LinkResponse::Other
                 ) {
                     info!("the peer rejected the link request");
                     return Ok(LinkResponse::Rejected);
                 }
                 let (tx, rx) = flume::bounded(100);
                 self.tx = Some(tx);
+                self.info.platform = Some(resp.platform);
                 tokio::spawn(async move {
                     handle_postauth_stream(sock, rx, handle).await;
                 });
@@ -174,6 +189,10 @@ impl ConnectionManager {
             .map(|c| &c.info)
     }
 
+    pub fn get_connection(&mut self, name: &str) -> Option<&Connection> {
+        self.available_connections.get(name)
+    }
+
     pub fn get_connection_mut(&mut self, name: &str) -> Option<&mut Connection> {
         self.available_connections.get_mut(name)
     }
@@ -206,7 +225,13 @@ async fn accept_connections(handle: AppHandle) -> Result<(), CommunicationError>
                             // HACK: Sleep for some time prevents the subsequent emit call to not hang and crash the
                             // entire app
                             tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-                            handle2.emit(DEVICE_LINKED, full_name).unwrap();
+                            {
+                                let cm_lock = handle2.state::<Mutex<ConnectionManager>>();
+                                let mut connection_manager = cm_lock.lock().await;
+                                let con =
+                                    connection_manager.get_connection_mut(&full_name).unwrap();
+                                handle2.emit(DEVICE_LINKED, &con.info).unwrap();
+                            }
                             info!("sending control of stream to post auth handler");
                             handle_postauth_stream(stream, rx, handle2).await;
                         } else {
@@ -325,13 +350,13 @@ async fn authenticate_peer(
     info!("reading inital message");
     let (mtype, payload) = read_stream(stream).await?;
     if mtype != TransferType::Link {
-        warn!("peer sent unexpected messages before linking");
+        error!("peer sent unexpected messages before linking");
         return Err(CommunicationError::Unauthenticated);
     }
 
-    let link_req = definitions::protobuf::Link::decode(payload);
+    let link_req = protocol::protobuf::Link::decode(payload);
     if link_req.is_err() {
-        warn!("received invalid protobuf payload");
+        error!("received invalid protobuf payload");
         return Err(CommunicationError::DecodeError);
     }
     let link_req = link_req.unwrap();
@@ -364,18 +389,20 @@ async fn authenticate_peer(
         let con = connection_manager.get_connection_mut(&full_name).unwrap();
         let (tx, rx) = bounded(100);
         con.tx = Some(tx);
+        con.info.platform = Some(link_req.platform);
         Ok(Some((rx, full_name)))
     } else {
         Ok(None)
     };
 
-    let resp = definitions::Link {
+    let resp = protocol::Link {
         request: None,
         name: our_name,
         response: Some(resp as i32),
+        platform: String::from(OUR_PLATFORM),
     };
 
-    let resp_message = definitions::encode(TransferType::Link, resp);
+    let resp_message = protocol::encode(TransferType::Link, resp);
     stream.write_all(&resp_message).await.unwrap();
     ret
 }
@@ -446,7 +473,7 @@ async fn transfer_handler(
 ) {
     match ttype {
         TransferType::TextMessage => {
-            if let Ok(message) = definitions::protobuf::TextMessage::decode(buff) {
+            if let Ok(message) = protocol::protobuf::TextMessage::decode(buff) {
                 let payload = Transfer {
                     ttype,
                     display_content: message.contents,
@@ -461,13 +488,15 @@ async fn transfer_handler(
             let user_config = user_config_lock.lock().await;
             let our_name = user_config.instance_name.clone();
 
-            let resp = definitions::Link {
+            let resp = protocol::Link {
                 request: None,
                 name: our_name,
                 response: Some(LinkResponse::Accepted.into()),
+                #[cfg(target_os = "linux")]
+                platform: String::from(OUR_PLATFORM),
             };
 
-            let resp_message = definitions::encode(TransferType::Link, resp);
+            let resp_message = protocol::encode(TransferType::Link, resp);
             stream.write_all(&resp_message).await.unwrap();
         }
     }
@@ -496,8 +525,8 @@ pub mod commands {
         let mut connection_manager = cm_lock.lock().await;
         let con = connection_manager.get_connection_mut(&name).unwrap();
 
-        let message = definitions::protobuf::TextMessage { contents };
-        let encmsg = definitions::encode(TransferType::TextMessage, message);
+        let message = protocol::protobuf::TextMessage { contents };
+        let encmsg = protocol::encode(TransferType::TextMessage, message);
 
         let tx = con.tx.as_mut().unwrap();
         tx.send_async(encmsg).await.unwrap();
@@ -521,7 +550,10 @@ pub mod commands {
             .await
             .map_err(|e| NetworkError::from(e))?;
         let res = match res {
-            LinkResponse::Accepted => Ok("accepted"),
+            LinkResponse::Accepted => {
+                handle.emit(DEVICE_LINKED, con.info.clone()).unwrap();
+                Ok("accepted")
+            }
             LinkResponse::Rejected => {
                 let cm_lock = handle.state::<Mutex<ConnectionManager>>();
                 let mut connection_manager = cm_lock.lock().await;

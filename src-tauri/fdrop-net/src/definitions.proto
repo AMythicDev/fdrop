@@ -5,6 +5,7 @@ package fdrop_net.definitons;
 message Link {
   optional bool request = 1;
   string name = 2;
+  string platform = 4;
   optional LinkResponse response = 3;
 }
 

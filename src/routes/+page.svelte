@@ -56,6 +56,7 @@
                   }}
                 >
                   {realname(device)}
+                  {device.platform}
                 </button>
               </li>
             {/each}
