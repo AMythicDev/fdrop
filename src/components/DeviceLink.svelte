@@ -4,7 +4,7 @@
   import Spinner from "flowbite-svelte/Spinner.svelte";
   import Listgroup from "flowbite-svelte/Listgroup.svelte";
   import { invoke } from "@tauri-apps/api/core";
-  import Circle from "./Circle.svelte";
+  import Circle from "$lib/icons/Circle.svelte";
   import { available_devices, realname } from "$lib/networking.svelte";
   import { emitTo, listen } from "@tauri-apps/api/event";
 

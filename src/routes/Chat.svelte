@@ -7,7 +7,7 @@
   import Input from "flowbite-svelte/Input.svelte";
   import InputAddon from "flowbite-svelte/InputAddon.svelte";
   import ButtonGroup from "flowbite-svelte/ButtonGroup.svelte";
-  import Send from "../components/Send.svelte";
+  import Send from "$lib/icons/Send.svelte";
   import { type Transfer, Sender, TransferType } from "$lib/networking.svelte";
 
   let { selected } = $props();

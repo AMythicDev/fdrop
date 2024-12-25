@@ -1,7 +1,7 @@
 <script lang="ts">
   import Button from "flowbite-svelte/Button.svelte";
   import ButtonGroup from "flowbite-svelte/ButtonGroup.svelte";
-  import Link from "../../components/link.svelte";
+  import Link from "$lib/icons//link.svelte";
   import CheckOutline from "flowbite-svelte-icons/CheckOutline.svelte";
   import CloseOutline from "flowbite-svelte-icons/CloseOutline.svelte";
   import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
