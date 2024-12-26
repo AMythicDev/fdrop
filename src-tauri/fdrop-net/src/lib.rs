@@ -492,7 +492,6 @@ async fn transfer_handler(
                 request: None,
                 name: our_name,
                 response: Some(LinkResponse::Accepted.into()),
-                #[cfg(target_os = "linux")]
                 platform: String::from(OUR_PLATFORM),
             };
 

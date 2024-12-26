@@ -34,7 +34,7 @@
     <Pane defaultSize={35} minSize={20}>
       <div class="flex flex-col justify-between h-full">
         {#if linked_devices.length > 0}
-          <DeviceList {linked_devices} bind:selected={selected} />
+          <DeviceList {linked_devices} bind:selected />
         {:else}
           <div class="flex flex-col items-center justify-center h-full gap-2">
             <span>No Linked Devices</span>

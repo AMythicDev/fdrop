@@ -1,6 +1,6 @@
 <script lang="ts">
   import { P, Input, Label } from "flowbite-svelte";
-  import { getActivePage, type UserConfig } from "../../lib/welcome";
+  import { getActivePage } from "../../lib/welcome";
   import Buttons from "./Buttons.svelte";
   import { FolderOpenOutline } from "flowbite-svelte-icons";
   import { open } from "@tauri-apps/plugin-dialog";
