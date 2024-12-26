@@ -9,14 +9,16 @@
   import ButtonGroup from "flowbite-svelte/ButtonGroup.svelte";
   import Send from "$lib/icons/Send.svelte";
   import FileCirclePlusSolid from "flowbite-svelte-icons/FileCirclePlusSolid.svelte";
+  import Tooltip from "flowbite-svelte/Tooltip.svelte";
   import { type Transfer, Sender, TransferType } from "$lib/networking.svelte";
   import { open } from "@tauri-apps/plugin-dialog";
   import { onMount, tick } from "svelte";
+  import { SvelteSet } from "svelte/reactivity";
 
   let { selected } = $props();
 
   let chat_message: string = $state("");
-  let file_selected: string[] = $state([]);
+  let file_selected = new SvelteSet<string>();
   let transfers: Transfer[] = $state([]);
 
   let transfers_list: HTMLElement | undefined = $state(undefined);
@@ -40,12 +42,17 @@
     scroll_transfer_list();
   }
 
-  function select_file() {
+  function select_file(clear: boolean) {
     open({
       multiple: true,
     }).then((selection: string[] | null) => {
       if (selection !== null) {
-        file_selected = selection;
+        if (clear) {
+          file_selected.clear();
+        }
+        for (const sel of selection) {
+          file_selected.add(sel);
+        }
       }
     });
   }
@@ -91,17 +98,29 @@
     {/each}
   </div>
   <form class="h-max" onsubmit={() => (chat_message = "")}>
-    {#if file_selected.length != 0}
-      <ul class="flex gap-2 overflow-x-scroll">
-        {#each file_selected as file}
-          <li class="w-10 overflow-x-hidden">{file}</li>
-        {/each}
-      </ul>
+    {#if file_selected.size != 0}
+      <div class="flex bg-gray-100">
+        <div class="flex gap-2 overflow-x-scroll">
+          {#each file_selected as file}
+            <Button
+              class="w-14 bg-transparent text-black overflow-x-hidden !border-r-4 !border-r-gray-200 !ring-transparent"
+              >{file}</Button
+            >
+            <Tooltip>{file}</Tooltip>
+          {/each}
+        </div>
+        <Button
+          class="w-10 bg-transparent text-black overflow-x-hidde !ring-transparent"
+          onclick={() => select_file(false)}
+        >
+          <FileCirclePlusSolid class="fill-gray-400" />
+        </Button>
+      </div>
     {/if}
     <ButtonGroup class="w-full">
       <Button
         class="!bg-gray-100 border-2 border-gray-200 w-10"
-        onclick={select_file}
+        onclick={() => select_file(true)}
       >
         <FileCirclePlusSolid class="h-6 fill-gray-400" />
       </Button>
