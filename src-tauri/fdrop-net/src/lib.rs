@@ -1,5 +1,6 @@
 mod errors;
 mod protocol;
+mod transfer;
 
 use bytes::{Bytes, BytesMut};
 use errors::{CommunicationError, DiscoveryError, NetworkError};
@@ -21,6 +22,7 @@ use tokio::{
     sync::Mutex,
 };
 use tracing::{error, info, warn};
+use transfer::{DisplayContent, DisplayFileTransfer, Transfer};
 
 const MDNS_SERVICE_TYPE: &str = "_fdrop._tcp.local.";
 const FDROP_PORT: u16 = 10116;
@@ -53,12 +55,6 @@ pub struct ConnectionInfo {
     pub name: String,
     pub linked: bool,
     pub platform: Option<String>,
-}
-
-#[derive(serde::Serialize, Clone)]
-pub struct Transfer {
-    ttype: TransferType,
-    display_content: String,
 }
 
 impl PartialEq for Connection {
@@ -241,10 +237,12 @@ async fn accept_connections(handle: AppHandle) -> Result<(), CommunicationError>
                     // HACK: Sleep for some time to give time for above task to start
                     tokio::time::sleep(std::time::Duration::from_secs(1)).await;
                 }
-                Err(e) => warn!("failed to connect to peer due to {e}"),
+                Err(e) => error!("failed to connect to peer due to {e}"),
             }
         }
-    });
+    })
+    .await
+    .unwrap();
     Ok(())
 }
 
@@ -476,7 +474,7 @@ async fn transfer_handler(
             if let Ok(message) = protocol::protobuf::TextMessage::decode(buff) {
                 let payload = Transfer {
                     ttype,
-                    display_content: message.contents,
+                    display_content: DisplayContent::Text(message.contents),
                 };
                 handle.emit("transfer", payload).unwrap();
             } else {
@@ -503,13 +501,16 @@ async fn transfer_handler(
                 let user_config_lock = handle.state::<Mutex<UserConfig>>();
                 let user_config = user_config_lock.lock().await;
                 let mut file_path = user_config.fdrop_dir.clone();
-                file_path.push(&message.file_name);
-                if let Ok(_file) = tokio::fs::File::create(&file_path).await {
-                    info!(?file_path, "created empty file");
-                }
+                // file_path.push(&message.file_name);
+                // if let Ok(_file) = tokio::fs::File::create(&file_path).await {
+                //     info!(?file_path, "created empty file");
+                // }
                 let payload = Transfer {
                     ttype,
-                    display_content: message.file_name,
+                    display_content: DisplayContent::DisplayFileTransfer(DisplayFileTransfer {
+                        file_paths: message.file_names,
+                        assoc_text: message.assoc_text,
+                    }),
                 };
                 handle.emit("transfer", payload).unwrap();
             } else {
@@ -555,28 +556,39 @@ pub mod commands {
     }
 
     #[tauri::command]
-    pub async fn send_file(
+    pub async fn send_files(
         handle: AppHandle,
         cname: String,
-        file_path: String,
+        file_paths: Vec<String>,
+        assoc_text: Option<String>,
     ) -> Result<(), String> {
         let cm_lock = handle.state::<Mutex<ConnectionManager>>();
         let mut connection_manager = cm_lock.lock().await;
         let con = connection_manager.get_connection_mut(&cname).unwrap();
 
-        let file_path = PathBuf::from(file_path);
-        let file_name = file_path.file_name().unwrap().to_str().unwrap().to_string();
-        let file = tokio::fs::File::open(file_path)
-            .await
-            .map_err(|e| human_readable_error(&e))?;
-        // TODO: handle error
-        let size = file
-            .metadata()
-            .await
-            .map_err(|e| human_readable_error(&e))?
-            .len();
+        let mut file_names = Vec::with_capacity(file_paths.len());
+        let mut sizes = Vec::with_capacity(file_paths.len());
 
-        let transfer = protocol::protobuf::PrepareFileTransfer { file_name, size };
+        for file_path in file_paths {
+            let file_path = PathBuf::from(file_path);
+            let file_name = file_path.file_name().unwrap().to_str().unwrap().to_string();
+            file_names.push(file_name);
+            let file = tokio::fs::File::open(file_path)
+                .await
+                .map_err(|e| human_readable_error(&e))?;
+            // TODO: handle error
+            let size = file
+                .metadata()
+                .await
+                .map_err(|e| human_readable_error(&e))?
+                .len();
+            sizes.push(size);
+        }
+        let transfer = protocol::protobuf::PrepareFileTransfer {
+            file_names,
+            sizes,
+            assoc_text,
+        };
         let enctransfer = protocol::encode(TransferType::PrepareFileTransfer, transfer);
         con.tx
             .as_mut()

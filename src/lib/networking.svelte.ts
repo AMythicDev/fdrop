@@ -15,11 +15,26 @@ export enum Sender {
 
 export enum TransferType {
   TextMessage,
+  PrepareFileTransfer,
+}
+
+export function transferTypeFromString(s: string): TransferType {
+  switch (s) {
+    case "TextMessage":
+      return TransferType.TextMessage;
+    case "PrepareFileTransfer":
+      return TransferType.PrepareFileTransfer;
+  }
+}
+
+export type DisplayFileTransfer = {
+  assoc_text?: string | null,
+  file_paths: string[]
 }
 
 export type Transfer = {
-  type: TransferType,
-  display_content: string,
+  ttype: TransferType,
+  display_content: string | DisplayFileTransfer,
   sentby: Sender | undefined,
 }
 

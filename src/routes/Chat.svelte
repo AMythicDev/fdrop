@@ -10,10 +10,17 @@
   import Send from "$lib/icons/Send.svelte";
   import FileCirclePlusSolid from "flowbite-svelte-icons/FileCirclePlusSolid.svelte";
   import Tooltip from "flowbite-svelte/Tooltip.svelte";
-  import { type Transfer, Sender, TransferType } from "$lib/networking.svelte";
+  import {
+    type Transfer,
+    Sender,
+    TransferType,
+    transferTypeFromString,
+  } from "$lib/networking.svelte";
+  import { filename } from "$lib/utils";
   import { open } from "@tauri-apps/plugin-dialog";
   import { onMount, tick } from "svelte";
   import { SvelteSet } from "svelte/reactivity";
+  import TransferDisplay from "./TransferDisplay.svelte";
 
   let { selected } = $props();
 
@@ -29,13 +36,32 @@
   });
 
   function send_message() {
-    if (chat_message.length == 0) return;
+    if (file_selected.size == 0 && chat_message.length == 0) return;
+
+    if (file_selected.size > 0) {
+      transfers.push({
+        ttype: TransferType.PrepareFileTransfer,
+        display_content: {
+          assoc_text: chat_message != "" ? chat_message : null,
+          file_paths: Array.from(file_selected),
+        },
+        sentby: Sender.Local,
+      });
+      invoke("send_files", {
+        cname: selected.name,
+        assocText: chat_message,
+        filePaths: Array.from(file_selected),
+      });
+      scroll_transfer_list();
+      return;
+    }
+
     invoke("send_text_message", {
       cname: selected.name,
       contents: chat_message,
     });
     transfers.push({
-      type: TransferType.TextMessage,
+      ttype: TransferType.TextMessage,
       display_content: chat_message,
       sentby: Sender.Local,
     });
@@ -75,6 +101,8 @@
   listen<Transfer>("transfer", (event) => {
     let transfer = event.payload;
     transfer.sentby = Sender.Peer;
+    if (typeof transfer.ttype == "string")
+      transfer.ttype = transferTypeFromString(transfer.ttype);
     transfers.push(transfer);
     scroll_transfer_list();
   });
@@ -86,25 +114,23 @@
     bind:this={transfers_list}
   >
     {#each transfers as transfer}
-      <div>
-        <div
-          class="{transfer.sentby == Sender.Local
-            ? 'float-right bg-blue-400'
-            : 'bg-green-400'} w-max text-white py-0.5 px-2.5 rounded-md"
-        >
-          {transfer.display_content}
-        </div>
-      </div>
+      <TransferDisplay {transfer} />
     {/each}
   </div>
-  <form class="h-max" onsubmit={() => (chat_message = "")}>
+  <form
+    class="h-max"
+    onsubmit={() => {
+      chat_message = "";
+      file_selected.clear();
+    }}
+  >
     {#if file_selected.size != 0}
       <div class="flex bg-gray-100">
         <div class="flex gap-2 overflow-x-scroll">
           {#each file_selected as file}
             <Button
               class="w-14 bg-transparent text-black overflow-x-hidden !border-r-4 !border-r-gray-200 !ring-transparent"
-              >{file}</Button
+              >{filename(file)}</Button
             >
             <Tooltip>{file}</Tooltip>
           {/each}
@@ -129,13 +155,13 @@
         class="focus:border-2 focus:border-gray-200 focus:ring-transparent"
         placeholder="Enter text to send"
       />
-      <InputAddon class="bg-green-400 border-green-400">
+      <InputAddon class="bg-green-400 border-green-400 w-16 p-0">
         <Button
           type="submit"
           class="!bg-transparent outline-none border-none"
           onclick={send_message}
         >
-          <Send class="h-6 fill-white" />
+          <Send class="fill-white w-6" />
         </Button>
       </InputAddon>
     </ButtonGroup>

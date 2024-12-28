@@ -33,6 +33,7 @@ pub fn run() {
             fdrop_net::commands::enable_networking,
             fdrop_net::commands::send_text_message,
             fdrop_net::commands::link_device_by_name,
+            fdrop_net::commands::send_files,
         ])
         .setup(|app| {
             let connection_manager = fdrop_net::ConnectionManager::new()?;
