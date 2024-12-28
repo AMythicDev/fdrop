@@ -21,7 +21,7 @@ use tokio::{
     net::{TcpListener, TcpStream},
     sync::Mutex,
 };
-use tracing::{error, info, warn};
+use tracing::{error, info};
 use transfer::{DisplayContent, DisplayFileTransfer, Transfer};
 
 const MDNS_SERVICE_TYPE: &str = "_fdrop._tcp.local.";
@@ -508,7 +508,7 @@ async fn transfer_handler(
                 let payload = Transfer {
                     ttype,
                     display_content: DisplayContent::DisplayFileTransfer(DisplayFileTransfer {
-                        file_paths: message.file_names,
+                        file_path: message.file_name,
                         assoc_text: message.assoc_text,
                     }),
                 };
@@ -524,6 +524,7 @@ pub mod commands {
     use std::path::PathBuf;
 
     use fdrop_common::human_readable_error;
+    use tokio::task::JoinSet;
 
     use super::*;
     #[tauri::command]
@@ -566,36 +567,36 @@ pub mod commands {
         let mut connection_manager = cm_lock.lock().await;
         let con = connection_manager.get_connection_mut(&cname).unwrap();
 
-        let mut file_names = Vec::with_capacity(file_paths.len());
-        let mut sizes = Vec::with_capacity(file_paths.len());
+        let mut join_set = JoinSet::new();
 
         for file_path in file_paths {
-            let file_path = PathBuf::from(file_path);
-            let file_name = file_path.file_name().unwrap().to_str().unwrap().to_string();
-            file_names.push(file_name);
-            let file = tokio::fs::File::open(file_path)
-                .await
-                .map_err(|e| human_readable_error(&e))?;
-            // TODO: handle error
-            let size = file
-                .metadata()
-                .await
-                .map_err(|e| human_readable_error(&e))?
-                .len();
-            sizes.push(size);
+            let mut tx = con.tx.clone();
+            let assoc_text = assoc_text.clone();
+            join_set.spawn(async move {
+                let file_path = PathBuf::from(file_path);
+                let file_name = file_path.file_name().unwrap().to_str().unwrap().to_string();
+                let file = tokio::fs::File::open(file_path)
+                    .await
+                    .map_err(|e| human_readable_error(&e))?;
+                // TODO: handle error
+                let size = file
+                    .metadata()
+                    .await
+                    .map_err(|e| human_readable_error(&e))?
+                    .len();
+
+                let transfer = protocol::protobuf::PrepareFileTransfer {
+                    file_name,
+                    size,
+                    assoc_text,
+                };
+                let enctransfer = protocol::encode(TransferType::PrepareFileTransfer, transfer);
+                tx.as_mut().unwrap().send_async(enctransfer).await.unwrap();
+                Ok::<(), String>(())
+            });
         }
-        let transfer = protocol::protobuf::PrepareFileTransfer {
-            file_names,
-            sizes,
-            assoc_text,
-        };
-        let enctransfer = protocol::encode(TransferType::PrepareFileTransfer, transfer);
-        con.tx
-            .as_mut()
-            .unwrap()
-            .send_async(enctransfer)
-            .await
-            .unwrap();
+
+        join_set.join_all().await;
 
         Ok(())
     }

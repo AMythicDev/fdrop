@@ -39,14 +39,17 @@
     if (file_selected.size == 0 && chat_message.length == 0) return;
 
     if (file_selected.size > 0) {
-      transfers.push({
-        ttype: TransferType.PrepareFileTransfer,
-        display_content: {
-          assoc_text: chat_message != "" ? chat_message : null,
-          file_paths: Array.from(file_selected),
-        },
-        sentby: Sender.Local,
-      });
+      let file_selected_arr = Array.from(file_selected);
+      for (const file of file_selected_arr) {
+        transfers.push({
+          ttype: TransferType.PrepareFileTransfer,
+          display_content: {
+            assoc_text: chat_message != "" ? chat_message : null,
+            file_path: file,
+          },
+          sentby: Sender.Local,
+        });
+      }
       invoke("send_files", {
         cname: selected.name,
         assocText: chat_message,

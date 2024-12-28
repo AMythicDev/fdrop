@@ -8,7 +8,7 @@ pub enum DisplayContent {
 
 #[derive(Clone, serde::Serialize)]
 pub struct DisplayFileTransfer {
-    pub file_paths: Vec<String>,
+    pub file_path: String,
     pub assoc_text: Option<String>,
 }
 

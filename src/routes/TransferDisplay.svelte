@@ -13,15 +13,13 @@
   >
     {#if transfer.ttype == TransferType.PrepareFileTransfer}
       <div class="flex flex-col gap-2 py-2">
-        {#each transfer.display_content.file_paths as file}
           <div
             class="h-14 {transfer.sentby == Sender.Local
               ? 'float-right bg-blue-300'
               : 'bg-green-300'} px-2"
           >
-            {filename(file)}
+            {filename(transfer.display_content.file_path)}
           </div>
-        {/each}
       </div>
       {transfer.display_content.assoc_text}
     {:else if transfer.ttype == TransferType.TextMessage}

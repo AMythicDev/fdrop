@@ -29,7 +29,7 @@ export function transferTypeFromString(s: string): TransferType {
 
 export type DisplayFileTransfer = {
   assoc_text?: string | null,
-  file_paths: string[]
+  file_path: string[]
 }
 
 export type Transfer = {
